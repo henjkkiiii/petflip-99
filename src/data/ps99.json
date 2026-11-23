@@ -1,0 +1,1033 @@
+{
+  "generatedAt": "2026-11-23T20:25:18.093Z",
+  "diamondIcon": "15258327857",
+  "diamondBag": "15058306840",
+  "crates": [
+    {
+      "id": "starter-paw",
+      "name": "Starter Paw Crate",
+      "icon": "/crates/starter-paw.png",
+      "tag": "STARTER",
+      "desc": "Low-cost starter crate with a sneaky 0.5% Huge drop.",
+      "houseEdge": 5,
+      "price": 462000,
+      "items": [
+        {
+          "name": "Huge Stardust Vein Fox",
+          "chance": 0.5,
+          "thumb": "94576868328650",
+          "value": 20499964,
+          "tier": "huge"
+        },
+        {
+          "name": "Jurassic Crocodile",
+          "chance": 1.5,
+          "thumb": "139858822372179",
+          "value": 8227995,
+          "tier": "normal"
+        },
+        {
+          "name": "Chill Axolotl",
+          "chance": 14,
+          "thumb": "14968193849",
+          "value": 598825,
+          "tier": "normal"
+        },
+        {
+          "name": "Elf Golem",
+          "chance": 14,
+          "thumb": "88802798169372",
+          "value": 428484,
+          "tier": "normal"
+        },
+        {
+          "name": "Vibrant Zebra",
+          "chance": 23.3333,
+          "thumb": "139386348071034",
+          "value": 153490,
+          "tier": "normal"
+        },
+        {
+          "name": "Doodle Rhino",
+          "chance": 23.3333,
+          "thumb": "14968220345",
+          "value": 90279,
+          "tier": "normal"
+        },
+        {
+          "name": "Goalie Octopus",
+          "chance": 23.3333,
+          "thumb": "113690669039982",
+          "value": 51727,
+          "tier": "normal"
+        }
+      ]
+    },
+    {
+      "id": "diamond-rush",
+      "name": "Diamond Rush Crate",
+      "icon": "/crates/diamond-rush.png",
+      "tag": "POPULAR",
+      "desc": "Balanced mid-tier PS99 pets with 1.5% Huge odds.",
+      "houseEdge": 5,
+      "price": 2090000,
+      "items": [
+        {
+          "name": "Huge Stingray",
+          "chance": 1.5,
+          "thumb": "74045348274896",
+          "value": 25112428,
+          "tier": "huge"
+        },
+        {
+          "name": "Tropical Parrot",
+          "chance": 3.5,
+          "thumb": "18644344647",
+          "value": 12034051,
+          "tier": "normal"
+        },
+        {
+          "name": "Gym Dragon",
+          "chance": 15,
+          "thumb": "74516876725093",
+          "value": 4036583,
+          "tier": "normal"
+        },
+        {
+          "name": "Fragmented Dominus Ball",
+          "chance": 15,
+          "thumb": "140173345738940",
+          "value": 2064955,
+          "tier": "normal"
+        },
+        {
+          "name": "Festive Cardinal",
+          "chance": 21.6667,
+          "thumb": "14968235639",
+          "value": 532549,
+          "tier": "normal"
+        },
+        {
+          "name": "Elf Golem",
+          "chance": 21.6667,
+          "thumb": "88802798169372",
+          "value": 428484,
+          "tier": "normal"
+        },
+        {
+          "name": "Lucki Angelus",
+          "chance": 21.6667,
+          "thumb": "90493602438892",
+          "value": 278787,
+          "tier": "normal"
+        }
+      ]
+    },
+    {
+      "id": "huge-10pct",
+      "name": "10% Huge Crate",
+      "icon": "/crates/huge-10pct.png",
+      "tag": "HIGH RISK",
+      "desc": "High-voltage 10% combined Huge odds for bold openers.",
+      "houseEdge": 5,
+      "price": 4930000,
+      "items": [
+        {
+          "name": "Huge Clover Fairy",
+          "chance": 1.5,
+          "thumb": "16744695511",
+          "value": 111517568,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Kawaii Dragon Ball",
+          "chance": 4.25,
+          "thumb": "108289198978887",
+          "value": 35996915,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Minecart Hamster",
+          "chance": 4.25,
+          "thumb": "106601892793198",
+          "value": 28246865,
+          "tier": "huge"
+        },
+        {
+          "name": "Wicked Kirin",
+          "chance": 30,
+          "thumb": "125687933489233",
+          "value": 503438,
+          "tier": "normal"
+        },
+        {
+          "name": "Ancestor Eagle",
+          "chance": 30,
+          "thumb": "94889153466060",
+          "value": 285871,
+          "tier": "normal"
+        },
+        {
+          "name": "Vibrant Zebra",
+          "chance": 30,
+          "thumb": "139386348071034",
+          "value": 153490,
+          "tier": "normal"
+        }
+      ]
+    },
+    {
+      "id": "cyber-tech",
+      "name": "Cyber Tech Crate",
+      "icon": "/crates/cyber-tech.png",
+      "tag": "TECH",
+      "desc": "High-tech exclusives and a 6% shot at cyber Huges.",
+      "houseEdge": 5,
+      "price": 6900000,
+      "items": [
+        {
+          "name": "Huge Raptor",
+          "chance": 1,
+          "thumb": "18758705093",
+          "value": 120794265,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Withered Agony",
+          "chance": 2.5,
+          "thumb": "127219457030426",
+          "value": 38350527,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Bedrock Bear",
+          "chance": 2.5,
+          "thumb": "82074985021561",
+          "value": 30079973,
+          "tier": "huge"
+        },
+        {
+          "name": "Chili Chinchilla",
+          "chance": 17,
+          "thumb": "83046250697348",
+          "value": 9736470,
+          "tier": "normal"
+        },
+        {
+          "name": "Silver Stag",
+          "chance": 17,
+          "thumb": "14968330834",
+          "value": 7004293,
+          "tier": "normal"
+        },
+        {
+          "name": "Lucki Golem",
+          "chance": 20,
+          "thumb": "121870156885729",
+          "value": 1690403,
+          "tier": "normal"
+        },
+        {
+          "name": "Pog Monkey",
+          "chance": 20,
+          "thumb": "118788057604476",
+          "value": 1244009,
+          "tier": "normal"
+        },
+        {
+          "name": "Reindeer Corgi",
+          "chance": 20,
+          "thumb": "15260345651",
+          "value": 1016937,
+          "tier": "normal"
+        }
+      ]
+    },
+    {
+      "id": "lava-inferno",
+      "name": "Lava Inferno Crate",
+      "icon": "/crates/lava-inferno.png",
+      "tag": "HOT",
+      "desc": "30% Huge rate featuring molten high-value Huges.",
+      "houseEdge": 5,
+      "price": 26000000,
+      "items": [
+        {
+          "name": "Huge Husky",
+          "chance": 0.5,
+          "thumb": "14976460483",
+          "value": 513453502,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Tarantula",
+          "chance": 4.5,
+          "thumb": "124339060912566",
+          "value": 142462195,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Happy Rock",
+          "chance": 12.5,
+          "thumb": "14976450873",
+          "value": 42834500,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Fiddlefern Cat",
+          "chance": 12.5,
+          "thumb": "106766832972765",
+          "value": 32057624,
+          "tier": "huge"
+        },
+        {
+          "name": "Valentine's Cat",
+          "chance": 23.3333,
+          "thumb": "14968357373",
+          "value": 10490079,
+          "tier": "normal"
+        },
+        {
+          "name": "Vapor Cat",
+          "chance": 23.3333,
+          "thumb": "129583703160215",
+          "value": 9474595,
+          "tier": "normal"
+        },
+        {
+          "name": "Snowflake Pegasus",
+          "chance": 23.3333,
+          "thumb": "14968334166",
+          "value": 7377744,
+          "tier": "normal"
+        }
+      ]
+    },
+    {
+      "id": "huge-5050",
+      "name": "50/50 Huge Crate",
+      "icon": "/crates/huge-5050.png",
+      "tag": "50/50",
+      "desc": "Pure coinflip tension — 50% chance to pull a Huge.",
+      "houseEdge": 5,
+      "price": 33500000,
+      "items": [
+        {
+          "name": "Huge Electric Cat",
+          "chance": 8,
+          "thumb": "16914837316",
+          "value": 112265980,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Hacked Reaper",
+          "chance": 21,
+          "thumb": "119356588704518",
+          "value": 62824372,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Cyborg Dominus",
+          "chance": 21,
+          "thumb": "104018054058625",
+          "value": 45066300,
+          "tier": "huge"
+        },
+        {
+          "name": "Dawn Phoenix",
+          "chance": 25,
+          "thumb": "118437932562812",
+          "value": 528144,
+          "tier": "normal"
+        },
+        {
+          "name": "Obsidian Dragon",
+          "chance": 25,
+          "thumb": "96188993012517",
+          "value": 364366,
+          "tier": "normal"
+        }
+      ]
+    },
+    {
+      "id": "huge-hunter",
+      "name": "Huge Hunter Crate",
+      "icon": "/crates/huge-hunter.png",
+      "tag": "100% HUGE",
+      "desc": "Guaranteed Huge pet every spin plus a Titanic chase.",
+      "houseEdge": 5,
+      "price": 73100000,
+      "items": [
+        {
+          "name": "Titanic Ooze Cat",
+          "chance": 0.25,
+          "thumb": "114761957372566",
+          "value": 5015951538,
+          "tier": "titanic"
+        },
+        {
+          "name": "Huge Cyborg Cat",
+          "chance": 2.875,
+          "thumb": "14976391620",
+          "value": 338787291,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Easter Yeti",
+          "chance": 2.875,
+          "thumb": "14976418843",
+          "value": 224386587,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Cardboard Blobfish",
+          "chance": 12,
+          "thumb": "130539431342073",
+          "value": 96386852,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Good vs Evil Cat",
+          "chance": 12,
+          "thumb": "18155109260",
+          "value": 70137134,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Luxe Peacock",
+          "chance": 23.3333,
+          "thumb": "18556267256",
+          "value": 35563232,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Minecart Hamster",
+          "chance": 23.3333,
+          "thumb": "106601892793198",
+          "value": 28246865,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Zombie Pig",
+          "chance": 23.3333,
+          "thumb": "112915612904336",
+          "value": 25155446,
+          "tier": "huge"
+        }
+      ]
+    },
+    {
+      "id": "cosmic-galaxy",
+      "name": "Cosmic Galaxy Crate",
+      "icon": "/crates/cosmic-galaxy.png",
+      "tag": "MYTHIC",
+      "desc": "Rare cosmic Huges with 1.5% Titanic drop chance.",
+      "houseEdge": 5,
+      "price": 227000000,
+      "items": [
+        {
+          "name": "Titanic Gym Cat",
+          "chance": 1.5,
+          "thumb": "116586359126755",
+          "value": 6045328813,
+          "tier": "titanic"
+        },
+        {
+          "name": "Huge UV Kitsune Ball",
+          "chance": 5.5,
+          "thumb": "133144353929951",
+          "value": 521186000,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Cartoon Bunny",
+          "chance": 14,
+          "thumb": "83751288485339",
+          "value": 242510011,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Totem Cat",
+          "chance": 14,
+          "thumb": "94635272523111",
+          "value": 160320076,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Easter Angelus",
+          "chance": 21.6667,
+          "thumb": "102295861032789",
+          "value": 78724860,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Lucki Monkey",
+          "chance": 21.6667,
+          "thumb": "114063062613222",
+          "value": 60678986,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Sprout Wyrmling",
+          "chance": 21.6667,
+          "thumb": "117238217692099",
+          "value": 45532329,
+          "tier": "huge"
+        }
+      ]
+    },
+    {
+      "id": "titanic-vault",
+      "name": "Titanic Vault Crate",
+      "icon": "/crates/titanic-vault.png",
+      "tag": "WHALE",
+      "desc": "High-roller vault stacked with Titanics & a Gargantuan.",
+      "houseEdge": 5,
+      "price": 1190000000,
+      "items": [
+        {
+          "name": "Gargantuan Guest 666",
+          "chance": 0.2,
+          "thumb": "135146676911044",
+          "value": 101564096163,
+          "tier": "gargantuan"
+        },
+        {
+          "name": "Titanic Guard Dominus",
+          "chance": 3.9,
+          "thumb": "100676807930076",
+          "value": 9606860471,
+          "tier": "titanic"
+        },
+        {
+          "name": "Titanic Garden Golem",
+          "chance": 3.9,
+          "thumb": "70521897859548",
+          "value": 6154658559,
+          "tier": "titanic"
+        },
+        {
+          "name": "Huge Chroma Ink Blob",
+          "chance": 16,
+          "thumb": "109166274058146",
+          "value": 766941080,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Husky",
+          "chance": 16,
+          "thumb": "14976460483",
+          "value": 513453502,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Cartoon Bunny",
+          "chance": 20,
+          "thumb": "83751288485339",
+          "value": 242510011,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Sketch Corgi",
+          "chance": 20,
+          "thumb": "17027110720",
+          "value": 160100022,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Devil Dominus",
+          "chance": 20,
+          "thumb": "18256894835",
+          "value": 123574472,
+          "tier": "huge"
+        }
+      ]
+    },
+    {
+      "id": "gargantuan-god",
+      "name": "Gargantuan God Crate",
+      "icon": "/crates/gargantuan-god.png",
+      "tag": "GOD TIER",
+      "desc": "Ultimate PS99 crate packed with Titanics & Gargantuans.",
+      "houseEdge": 5,
+      "price": 4410000000,
+      "items": [
+        {
+          "name": "Gargantuan Nyan Cat",
+          "chance": 0.75,
+          "thumb": "102598468729073",
+          "value": 146697202547,
+          "tier": "gargantuan"
+        },
+        {
+          "name": "Gargantuan 1x1x1x1",
+          "chance": 0.75,
+          "thumb": "96105981449334",
+          "value": 101848377147,
+          "tier": "gargantuan"
+        },
+        {
+          "name": "Titanic Witch Wolf",
+          "chance": 5.25,
+          "thumb": "74523750699706",
+          "value": 16204633604,
+          "tier": "titanic"
+        },
+        {
+          "name": "Titanic Nyan Cat",
+          "chance": 5.25,
+          "thumb": "102693200913432",
+          "value": 10093225402,
+          "tier": "titanic"
+        },
+        {
+          "name": "Huge Cyborg Capybara",
+          "chance": 16.5,
+          "thumb": "15260482561",
+          "value": 2185399227,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Hedgehog",
+          "chance": 16.5,
+          "thumb": "76079961004041",
+          "value": 1522855013,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Dog",
+          "chance": 18.3333,
+          "thumb": "14976397743",
+          "value": 833200705,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Scuba Dog",
+          "chance": 18.3333,
+          "thumb": "139017924153372",
+          "value": 591222717,
+          "tier": "huge"
+        },
+        {
+          "name": "Huge Sapphire Phoenix",
+          "chance": 18.3333,
+          "thumb": "15260480400",
+          "value": 408323975,
+          "tier": "huge"
+        }
+      ]
+    }
+  ],
+  "showcase": [
+    {
+      "name": "Gargantuan Solar Lion",
+      "thumb": "87628881195468",
+      "value": 753376988773,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Titanic Hippomelon",
+      "thumb": "14976631515",
+      "value": 662127258835,
+      "tier": "titanic"
+    },
+    {
+      "name": "Gargantuan Hypnotic Kitsune",
+      "thumb": "130525621588743",
+      "value": 470884157338,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Kaiju King",
+      "thumb": "122037254674435",
+      "value": 421998720000,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Starfall Dragon",
+      "thumb": "106256354379795",
+      "value": 407840960000,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Dot Matrix Pegasus",
+      "thumb": "133716042717345",
+      "value": 335140226560,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Hellish Axolotl",
+      "thumb": "74041646461593",
+      "value": 334625025763,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Vapor Phoenix",
+      "thumb": "84134935712625",
+      "value": 314233306680,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Patchwork Agony",
+      "thumb": "90326669323204",
+      "value": 296717034043,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Exquisite Parrot",
+      "thumb": "112010823795135",
+      "value": 296427988480,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Jurassic Dragon",
+      "thumb": "135125751282892",
+      "value": 291871701513,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Lucki Chest Mimic",
+      "thumb": "96210965239108",
+      "value": 290903937487,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Clown Cat",
+      "thumb": "92898513415852",
+      "value": 276580241188,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Googly Agony",
+      "thumb": "99540557591138",
+      "value": 264965797375,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Titanic Pink Balloon Cat",
+      "thumb": "14976657520",
+      "value": 264713004561,
+      "tier": "titanic"
+    },
+    {
+      "name": "Gargantuan Yin-Yang Kitsune",
+      "thumb": "90918977215657",
+      "value": 247378565761,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Forest Wyvern",
+      "thumb": "120552464852825",
+      "value": 242862017541,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Santa Paws",
+      "thumb": "85770840304413",
+      "value": 229782070956,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Dark Dragon",
+      "thumb": "100327262559787",
+      "value": 227437234811,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Aura Cat",
+      "thumb": "137518632763038",
+      "value": 225255369425,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Matryoshka Bear",
+      "thumb": "96710812218566",
+      "value": 202158098324,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Hippomelon",
+      "thumb": "133378666610902",
+      "value": 200048648884,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Frankenpup Dog",
+      "thumb": "73716913913195",
+      "value": 194371588505,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Mothman",
+      "thumb": "90053988446409",
+      "value": 191562495888,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Domino Dominus",
+      "thumb": "119420732908416",
+      "value": 190941373052,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Super Coral Kraken",
+      "thumb": "71123467327540",
+      "value": 182299046528,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Grim Reaper",
+      "thumb": "108242446619492",
+      "value": 179524736216,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Totem Monkey",
+      "thumb": "119822736449264",
+      "value": 172417337549,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Bloom Dominus",
+      "thumb": "113165518550651",
+      "value": 166735396709,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Dawn Phoenix",
+      "thumb": "77286983181517",
+      "value": 165228439558,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Titanic Luxe Axolotl",
+      "thumb": "75796665600934",
+      "value": 163564772626,
+      "tier": "titanic"
+    },
+    {
+      "name": "Gargantuan Magma Spirit",
+      "thumb": "132074129972033",
+      "value": 163267212755,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Super Fluffy Cat",
+      "thumb": "130790623840200",
+      "value": 159580690161,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Anime Agony",
+      "thumb": "102684679239791",
+      "value": 158635534943,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Doge",
+      "thumb": "91301167582038",
+      "value": 158617659308,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Special Ops Moth",
+      "thumb": "91565856235548",
+      "value": 154661642798,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Holofoil Agony",
+      "thumb": "84805847330138",
+      "value": 153806710998,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan RGB Angelus",
+      "thumb": "111182824823478",
+      "value": 151477208065,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Leafy Deer",
+      "thumb": "93500762936904",
+      "value": 147178263732,
+      "tier": "gargantuan"
+    },
+    {
+      "name": "Gargantuan Nyan Cat",
+      "thumb": "102598468729073",
+      "value": 146697202547,
+      "tier": "gargantuan"
+    }
+  ],
+  "dailyBonusPets": [
+    {
+      "name": "Elf Golem",
+      "thumb": "88802798169372",
+      "value": 428484,
+      "tier": "normal"
+    },
+    {
+      "name": "Wicked Agony",
+      "thumb": "14968359556",
+      "value": 437204,
+      "tier": "normal"
+    },
+    {
+      "name": "M-6 PROTOTYPE",
+      "thumb": "15260348918",
+      "value": 479124,
+      "tier": "normal"
+    },
+    {
+      "name": "Wicked Kirin",
+      "thumb": "125687933489233",
+      "value": 503438,
+      "tier": "normal"
+    },
+    {
+      "name": "Watermelon Golem",
+      "thumb": "98975858132119",
+      "value": 518086,
+      "tier": "normal"
+    },
+    {
+      "name": "Dawn Phoenix",
+      "thumb": "118437932562812",
+      "value": 528144,
+      "tier": "normal"
+    },
+    {
+      "name": "Gym Unicorn",
+      "thumb": "138011318423105",
+      "value": 566257,
+      "tier": "normal"
+    },
+    {
+      "name": "Chill Axolotl",
+      "thumb": "14968193849",
+      "value": 598825,
+      "tier": "normal"
+    },
+    {
+      "name": "Love Corgi",
+      "thumb": "18883451183",
+      "value": 737888,
+      "tier": "normal"
+    },
+    {
+      "name": "Poinsettia Peacock",
+      "thumb": "124627794455397",
+      "value": 786741,
+      "tier": "normal"
+    },
+    {
+      "name": "Candycane",
+      "thumb": "14968190013",
+      "value": 846174,
+      "tier": "normal"
+    },
+    {
+      "name": "Reindeer Corgi",
+      "thumb": "15260345651",
+      "value": 1016937,
+      "tier": "normal"
+    },
+    {
+      "name": "Fancy Axolotl",
+      "thumb": "14968234743",
+      "value": 1194832,
+      "tier": "normal"
+    },
+    {
+      "name": "Pog Monkey",
+      "thumb": "118788057604476",
+      "value": 1244009,
+      "tier": "normal"
+    },
+    {
+      "name": "North Pole Wolf",
+      "thumb": "14968292692",
+      "value": 1455426,
+      "tier": "normal"
+    }
+  ],
+  "economy": {
+    "rapBenchmarks": {
+      "cheapestHuge": 25678828,
+      "medianHuge": 58314703,
+      "medianExclusivePet": 15998491,
+      "medianLootbox": 737139,
+      "cheapestEgg": 462000,
+      "updatedAt": "2026-11-23T20:25:18.092Z"
+    },
+    "dailyRewards": [
+      {
+        "day": 1,
+        "gems": 100000,
+        "bonusPet": false
+      },
+      {
+        "day": 2,
+        "gems": 150000,
+        "bonusPet": false
+      },
+      {
+        "day": 3,
+        "gems": 260000,
+        "bonusPet": false
+      },
+      {
+        "day": 4,
+        "gems": 360000,
+        "bonusPet": false
+      },
+      {
+        "day": 5,
+        "gems": 510000,
+        "bonusPet": false
+      },
+      {
+        "day": 6,
+        "gems": 770000,
+        "bonusPet": false
+      },
+      {
+        "day": 7,
+        "gems": 1300000,
+        "bonusPet": true
+      }
+    ],
+    "faucet": {
+      "amount": 51000,
+      "threshold": 26000
+    },
+    "levelRewards": [
+      {
+        "level": 2,
+        "title": "Rookie Hatcher",
+        "reward": 100000
+      },
+      {
+        "level": 5,
+        "title": "Gem Collector",
+        "reward": 260000
+      },
+      {
+        "level": 10,
+        "title": "Huge Hunter",
+        "reward": 620000
+      },
+      {
+        "level": 20,
+        "title": "Titanic Roller",
+        "reward": 1500000
+      },
+      {
+        "level": 35,
+        "title": "Gargantuan Legend",
+        "reward": 3600000
+      }
+    ]
+  }
+}
