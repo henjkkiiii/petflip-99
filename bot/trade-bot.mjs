@@ -216,14 +216,19 @@ console.log('Watching Trade Queue & Roblox Trade Window every 2s...\n');
 let lastQueueSig = '';
 let recentPopupJob = null;
 let lastStockSync = 0;
+let lastSyncedHudGems = -1;
 
 async function syncHudGemsIfNeeded() {
   if (!coords.myHudGemsBox || Date.now() - lastStockSync < 15_000) return;
   lastStockSync = Date.now();
   const hudText = ocrRect(coords.myHudGemsBox);
   const gems = parseOcrGems(hudText);
-  if (gems > 0) {
-    await api('/api/bot/stock', 'POST', { gems }).catch(() => null);
+  if (gems > 0 && gems !== lastSyncedHudGems) {
+    lastSyncedHudGems = gems;
+    const res = await api('/api/bot/stock', 'POST', { gems }).catch(() => null);
+    if (res?.ok) {
+      console.log(`[STOCK] Synced HUD gems ("${hudText}") -> ${gems.toLocaleString()}`);
+    }
   }
 }
 

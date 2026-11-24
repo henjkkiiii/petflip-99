@@ -1053,6 +1053,16 @@ function completeDepositJob(job, gems, txId, actorName = 'TradeBot', petsOverrid
   job.completedBy = actorName;
   job.finishedAt = now;
   if (txId) db.processedBotTx[txId] = now;
+
+  // Update bot stock automatically on deposit
+  const stock = sanitizeBotStock(db.siteConfig?.botStock);
+  if (cleanGems > 0) stock.gems = Math.max(0, stock.gems + cleanGems);
+  if (cleanPets.length > 0) {
+    stock.pets = [...stock.pets, ...cleanPets.map((p) => p.name)].slice(0, 500);
+  }
+  stock.updatedAt = now;
+  db.siteConfig.botStock = stock;
+
   logAudit(
     actorName,
     `Deposit trade completed for ${acc.username} (${job.robloxUsername}): +${formatGemsServer(cleanGems)} gems, +${cleanPets.length} pets`
@@ -1070,6 +1080,21 @@ function completeWithdrawJob(job, txId, actorName = 'TradeBot') {
   job.completedBy = actorName;
   job.finishedAt = Date.now();
   if (txId) db.processedBotTx[txId] = job.finishedAt;
+
+  // Update bot stock automatically on withdraw
+  const stock = sanitizeBotStock(db.siteConfig?.botStock);
+  if (job.amount > 0) stock.gems = Math.max(0, stock.gems - job.amount);
+  if (Array.isArray(job.pets) && job.pets.length > 0) {
+    const remaining = [...stock.pets];
+    for (const p of job.pets) {
+      const idx = remaining.findIndex((n) => n.toLowerCase() === String(p?.name || '').toLowerCase());
+      if (idx !== -1) remaining.splice(idx, 1);
+    }
+    stock.pets = remaining;
+  }
+  stock.updatedAt = job.finishedAt;
+  db.siteConfig.botStock = stock;
+
   logAudit(
     actorName,
     `Withdraw trade sent to ${job.username} (${job.robloxUsername}): ${formatGemsServer(job.amount)} gems, ${job.actualPetsCount} pets`
