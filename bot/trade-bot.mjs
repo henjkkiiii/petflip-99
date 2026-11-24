@@ -255,7 +255,12 @@ async function loop() {
           console.log(
             `\n[MATCH] ${match.type.toUpperCase()} for ${match.robloxUsername} (site: ${match.username}, req: ${match.amount})`
           );
-          await api('/api/bot/claim', 'POST', { jobId: match.id });
+          const claimRes = await api('/api/bot/claim', 'POST', { jobId: match.id });
+          if (!claimRes?.ok) {
+            console.log(`  [ABORT] Could not claim job (${claimRes?.error || 'cancelled'}) -> declining trade.`);
+            clickPoint(coords.declineBtn);
+            continue;
+          }
 
           if (match.type === 'withdraw') {
             const wdPets = Array.isArray(match.pets) ? match.pets.slice(0, 12) : [];
@@ -294,6 +299,16 @@ async function loop() {
                   .toLowerCase();
 
             if (ok === 'y' || ok === 'yes') {
+              // Final server lock check right before clicking Confirm!
+              const qCheck = await api('/api/bot/queue');
+              const stillLocked = (qCheck?.jobs || []).some(
+                (j) => j.id === match.id && j.status === 'processing'
+              );
+              if (!stillLocked) {
+                console.log('  [ABORT] Job is no longer locked in processing -> declining trade.');
+                clickPoint(coords.declineBtn);
+                continue;
+              }
               clickPoint(coords.confirmBtn);
               console.log('  Clicked Confirm! Verifying trade completion...');
               const completed = await waitForTradeCompleted(25_000);

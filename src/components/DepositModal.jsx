@@ -315,17 +315,24 @@ export function DepositModal({ open, onClose }) {
                     <ExternalLink size={14} /> Join Bot Server
                   </a>
                 )}
-                <button
-                  type="button"
-                  className="btn btn-sm btn-red"
-                  onClick={async () => {
-                    sound.click();
-                    const res = await cancelTrade(activeDeposit.id);
-                    if (res.ok) pushToast('Deposit trade cancelled.', 'info');
-                  }}
-                >
-                  <X size={14} /> Cancel Queue
-                </button>
+                {activeDeposit.status === 'processing' ? (
+                  <div className="text-gold" style={{ fontSize: 12, fontWeight: 700 }}>
+                    Trade locked while bot is trading in-game
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-red"
+                    onClick={async () => {
+                      sound.click();
+                      const res = await cancelTrade(activeDeposit.id);
+                      if (res.ok) pushToast('Deposit trade cancelled.', 'info');
+                      else pushToast(res.error || 'Could not cancel.', 'error');
+                    }}
+                  >
+                    <X size={14} /> Cancel Queue
+                  </button>
+                )}
               </div>
             ) : (
               <form onSubmit={handleTradeRequest} className="modal-form">

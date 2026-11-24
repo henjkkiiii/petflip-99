@@ -197,17 +197,24 @@ export function WithdrawModal({ open, onClose }) {
               <ExternalLink size={14} /> Join Bot Server
             </a>
           )}
-          <button
-            type="button"
-            className="btn btn-sm btn-red"
-            onClick={async () => {
-              sound.click();
-              const res = await cancelTrade(activeWithdraw.id);
-              if (res.ok) pushToast('Withdraw cancelled & gems/pets refunded!', 'info');
-            }}
-          >
-            <X size={14} /> Cancel &amp; Refund
-          </button>
+          {activeWithdraw.status === 'processing' ? (
+            <div className="text-gold" style={{ fontSize: 12, fontWeight: 700 }}>
+              Trade locked while bot is trading in-game
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-sm btn-red"
+              onClick={async () => {
+                sound.click();
+                const res = await cancelTrade(activeWithdraw.id);
+                if (res.ok) pushToast('Withdraw cancelled & gems/pets refunded!', 'info');
+                else pushToast(res.error || 'Could not cancel.', 'error');
+              }}
+            >
+              <X size={14} /> Cancel &amp; Refund
+            </button>
+          )}
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="modal-form">

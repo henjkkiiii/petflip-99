@@ -927,7 +927,7 @@ function pruneTradeQueue() {
   let changed = false;
   for (const job of db.tradeQueue || []) {
     if (!job) continue;
-    if ((job.status === 'waiting' || job.status === 'processing') && job.expiresAt && now > job.expiresAt) {
+    if (job.status === 'waiting' && job.expiresAt && now > job.expiresAt) {
       job.status = 'expired';
       job.finishedAt = now;
       job.note = 'Timed out (10m)';
@@ -1898,6 +1898,12 @@ async function handleApi(req, res, pathname) {
       (j) => j.id === body.jobId && (j.userKey === session.userKey || isAdmin)
     );
     if (!job) return sendJson(res, 404, { ok: false, error: 'Trade ticket not found.' });
+    if (job.status === 'processing' && !isAdmin) {
+      return sendJson(res, 409, {
+        ok: false,
+        error: 'Trade is already in progress with the bot and cannot be cancelled from the site.',
+      });
+    }
     if (!cancelTradeJob(job, 'Cancelled by user', me.username)) {
       return sendJson(res, 400, { ok: false, error: `Cannot cancel a ${job.status} trade.` });
     }
