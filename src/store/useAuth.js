@@ -62,9 +62,10 @@ export const useAuth = create((set, get) => {
     } else {
       const wasSignedIn = Boolean(prevKey);
       if (sentToken && hadToken !== false) {
-        clearToken();
+        clearToken(sentToken);
       }
-      if (!wasSignedIn || (sentToken && hadToken !== false)) {
+      const serverRejectedSession = hadToken === true || Boolean(sentToken && hadToken !== false);
+      if (!wasSignedIn || serverRejectedSession) {
         pendingSnapshot = null;
         if (syncTimer) {
           clearTimeout(syncTimer);
@@ -116,7 +117,7 @@ export const useAuth = create((set, get) => {
 
   const flushSync = async () => {
     if (!pendingSnapshot) return;
-    if (!getToken() || !get().currentUserKey) {
+    if (!get().currentUserKey) {
       pendingSnapshot = null;
       return;
     }
@@ -127,6 +128,7 @@ export const useAuth = create((set, get) => {
 
     syncInFlight = true;
     const epochAtStart = authEpoch;
+    const sentToken = getToken();
     const payload = {
       data: pendingSnapshot,
       adminRevision: get().activeAdminRevision || 1,
@@ -135,7 +137,7 @@ export const useAuth = create((set, get) => {
 
     try {
       const res = await apiPost('/api/account/sync', payload);
-      if (epochAtStart !== authEpoch) {
+      if (epochAtStart !== authEpoch || sentToken !== getToken()) {
         dirtyWhileSyncing = false;
         return;
       }
@@ -150,9 +152,10 @@ export const useAuth = create((set, get) => {
         useToast.getState().push('Account updated by admin.', 'info');
         dirtyWhileSyncing = false;
       } else if (res.status === 401) {
-        clearToken();
+        clearToken(sentToken);
         set({ accounts: {}, currentUserKey: null, activeAdminRevision: 0, promoCodes: [] });
         useGame.getState().loadGuestState();
+        useToast.getState().push('Session expired — please sign in again.', 'info');
         dirtyWhileSyncing = false;
       } else if (res.ok) {
         const curKey = get().currentUserKey;
@@ -186,7 +189,7 @@ export const useAuth = create((set, get) => {
   };
 
   setSyncHandler((snapshot) => {
-    if (!get().currentUserKey || !getToken()) return;
+    if (!get().currentUserKey) return;
     pendingSnapshot = snapshot;
     scheduleSync(180);
   });
@@ -268,14 +271,25 @@ export const useAuth = create((set, get) => {
           get().syncFromServer(false);
         }
       };
+      const onStorage = (e) => {
+        if (!stopped && e.key === 'petflip99_token_v1') {
+          get().syncFromServer(false);
+        }
+      };
       if (typeof document !== 'undefined') {
         document.addEventListener('visibilitychange', onVis);
+      }
+      if (typeof window !== 'undefined') {
+        window.addEventListener('storage', onStorage);
       }
       return () => {
         stopped = true;
         clearInterval(id);
         if (typeof document !== 'undefined') {
           document.removeEventListener('visibilitychange', onVis);
+        }
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('storage', onStorage);
         }
       };
     },

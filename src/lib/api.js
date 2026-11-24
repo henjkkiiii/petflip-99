@@ -4,10 +4,9 @@ const CID_KEY = 'petflip99_cid_v1';
 let memoryToken = '';
 
 export function getToken() {
-  if (memoryToken) return memoryToken;
   try {
     const stored = localStorage.getItem(TOKEN_KEY) || '';
-    if (stored) memoryToken = stored;
+    memoryToken = stored;
     return stored;
   } catch {
     return memoryToken;
@@ -24,8 +23,21 @@ export function setToken(token) {
   }
 }
 
-export function clearToken() {
-  setToken('');
+export function clearToken(expectedToken = '') {
+  if (!expectedToken) {
+    setToken('');
+    return;
+  }
+  if (memoryToken === expectedToken) {
+    memoryToken = '';
+  }
+  try {
+    if (localStorage.getItem(TOKEN_KEY) === expectedToken) {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+  } catch {
+    // Ignore storage removal failures
+  }
 }
 
 export function getClientId() {
@@ -60,6 +72,7 @@ export async function apiGet(path) {
       method: 'GET',
       headers: buildHeaders(),
       cache: 'no-store',
+      credentials: 'same-origin',
     });
     const data = await res.json().catch(() => null);
     if (!data || typeof data !== 'object') {
@@ -77,6 +90,7 @@ export async function apiPost(path, body = {}) {
       method: 'POST',
       headers: buildHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
+      credentials: 'same-origin',
     });
     const data = await res.json().catch(() => null);
     if (!data || typeof data !== 'object') {

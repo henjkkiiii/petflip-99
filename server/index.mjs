@@ -14,6 +14,8 @@ const HOST = process.env.HOST || (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
 const PORT = Number(process.env.PORT || 4173);
 const MAX_BODY_BYTES = 512 * 1024;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const SESSION_TTL_SEC = Math.floor(SESSION_TTL_MS / 1000);
+const SESSION_COOKIE = 'pf99_session';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'petflip99-hmac-session-secret-v1';
 const INITIAL_ADMIN_BALANCE = 100_000_000;
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
@@ -272,18 +274,67 @@ function purgeUserSessions(userKey) {
   }
 }
 
-function getBearerToken(req) {
-  const authHeader = String(req.headers.authorization || '');
-  if (authHeader.startsWith('Bearer ')) {
-    return authHeader.slice(7).trim();
+function isSecureRequest(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  return proto === 'https' || Boolean(req.socket?.encrypted);
+}
+
+function buildSessionCookie(req, token, maxAgeSeconds) {
+  const safeAge = Math.max(0, Math.round(Number(maxAgeSeconds) || 0));
+  const parts = [
+    `${SESSION_COOKIE}=${encodeURIComponent(token || '')}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${safeAge}`,
+  ];
+  if (isSecureRequest(req)) {
+    parts.push('Secure');
   }
-  const altHeader = String(req.headers['x-session-token'] || '').trim();
-  if (altHeader) return altHeader;
+  return parts.join('; ');
+}
+
+function getCookieValue(req, name) {
+  const raw = String(req.headers.cookie || '');
+  if (!raw) return '';
+  for (const part of raw.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const key = part.slice(0, idx).trim();
+    if (key !== name) continue;
+    const val = part.slice(idx + 1).trim();
+    try {
+      return decodeURIComponent(val);
+    } catch {
+      return val;
+    }
+  }
   return '';
 }
 
-function getSessionAccount(req) {
-  const token = getBearerToken(req);
+function getCandidateTokens(req) {
+  const candidates = [];
+  const seen = new Set();
+  const add = (raw) => {
+    const tok = String(raw || '').trim();
+    if (tok && !seen.has(tok)) {
+      seen.add(tok);
+      candidates.push(tok);
+    }
+  };
+  const authHeader = String(req.headers.authorization || '');
+  if (authHeader.startsWith('Bearer ')) {
+    add(authHeader.slice(7));
+  }
+  add(req.headers['x-session-token']);
+  add(getCookieValue(req, SESSION_COOKIE));
+  return candidates;
+}
+
+function resolveToken(token) {
   if (!token) return null;
   if (db.revokedTokens?.[token]) return null;
 
@@ -307,6 +358,14 @@ function getSessionAccount(req) {
     return null;
   }
   return { token, userKey: sess.userKey, account: acc };
+}
+
+function getSessionAccount(req) {
+  for (const token of getCandidateTokens(req)) {
+    const resolved = resolveToken(token);
+    if (resolved) return resolved;
+  }
+  return null;
 }
 
 function getLevelFromXp(xp) {
@@ -341,11 +400,12 @@ function sanitizeSyncData(raw, fallback) {
   };
 }
 
-function sendJson(res, status, payload) {
+function sendJson(res, status, payload, extraHeaders = {}) {
   const json = JSON.stringify(payload);
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
+    ...extraHeaders,
   });
   res.end(json);
 }
@@ -410,7 +470,7 @@ async function handleApi(req, res, pathname) {
 
     return sendJson(res, 200, {
       ok: true,
-      hadToken: Boolean(getBearerToken(req)),
+      hadToken: getCandidateTokens(req).length > 0,
       siteConfig: sanitizeSiteConfig(db.siteConfig, isAdmin),
       me: sanitizeAccount(me),
       userKey: session?.userKey || null,
@@ -480,13 +540,18 @@ async function handleApi(req, res, pathname) {
     const token = createSession(key);
     saveDb();
 
-    return sendJson(res, 200, {
-      ok: true,
-      token,
-      userKey: key,
-      account: sanitizeAccount(account),
-      siteConfig: sanitizeSiteConfig(db.siteConfig, false),
-    });
+    return sendJson(
+      res,
+      200,
+      {
+        ok: true,
+        token,
+        userKey: key,
+        account: sanitizeAccount(account),
+        siteConfig: sanitizeSiteConfig(db.siteConfig, false),
+      },
+      { 'Set-Cookie': buildSessionCookie(req, token, SESSION_TTL_SEC) }
+    );
   }
 
   if (pathname === '/api/auth/login') {
@@ -509,25 +574,38 @@ async function handleApi(req, res, pathname) {
     saveDb();
 
     const accIsAdmin = account.role === 'admin';
-    return sendJson(res, 200, {
-      ok: true,
-      token,
-      userKey: key,
-      account: sanitizeAccount(account),
-      siteConfig: sanitizeSiteConfig(db.siteConfig, accIsAdmin),
-      accounts: accIsAdmin ? sanitizeAccountsMap(db.accounts) : null,
-      promoCodes: accIsAdmin ? listPromoCodes() : null,
-    });
+    return sendJson(
+      res,
+      200,
+      {
+        ok: true,
+        token,
+        userKey: key,
+        account: sanitizeAccount(account),
+        siteConfig: sanitizeSiteConfig(db.siteConfig, accIsAdmin),
+        accounts: accIsAdmin ? sanitizeAccountsMap(db.accounts) : null,
+        promoCodes: accIsAdmin ? listPromoCodes() : null,
+      },
+      { 'Set-Cookie': buildSessionCookie(req, token, SESSION_TTL_SEC) }
+    );
   }
 
   if (pathname === '/api/auth/logout') {
-    const tok = getBearerToken(req);
-    if (tok) {
-      db.revokedTokens[tok] = Date.now();
-      if (db.sessions[tok]) delete db.sessions[tok];
+    const tokens = getCandidateTokens(req);
+    if (tokens.length > 0) {
+      const now = Date.now();
+      for (const tok of tokens) {
+        db.revokedTokens[tok] = now;
+        if (db.sessions[tok]) delete db.sessions[tok];
+      }
       saveDb();
     }
-    return sendJson(res, 200, { ok: true });
+    return sendJson(
+      res,
+      200,
+      { ok: true },
+      { 'Set-Cookie': buildSessionCookie(req, '', 0) }
+    );
   }
 
   // Authenticated player routes
