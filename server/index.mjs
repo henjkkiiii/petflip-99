@@ -240,6 +240,8 @@ function getBearerToken(req) {
   if (authHeader.startsWith('Bearer ')) {
     return authHeader.slice(7).trim();
   }
+  const altHeader = String(req.headers['x-session-token'] || '').trim();
+  if (altHeader) return altHeader;
   return '';
 }
 
@@ -361,6 +363,7 @@ async function handleApi(req, res, pathname) {
 
     return sendJson(res, 200, {
       ok: true,
+      hadToken: Boolean(getBearerToken(req)),
       siteConfig: sanitizeSiteConfig(db.siteConfig, isAdmin),
       me: sanitizeAccount(me),
       userKey: session?.userKey || null,

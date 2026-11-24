@@ -1,20 +1,26 @@
 const TOKEN_KEY = 'petflip99_token_v1';
 const CID_KEY = 'petflip99_cid_v1';
 
+let memoryToken = '';
+
 export function getToken() {
+  if (memoryToken) return memoryToken;
   try {
-    return localStorage.getItem(TOKEN_KEY) || '';
+    const stored = localStorage.getItem(TOKEN_KEY) || '';
+    if (stored) memoryToken = stored;
+    return stored;
   } catch {
-    return '';
+    return memoryToken;
   }
 }
 
 export function setToken(token) {
+  memoryToken = token ? String(token) : '';
   try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
+    if (memoryToken) localStorage.setItem(TOKEN_KEY, memoryToken);
     else localStorage.removeItem(TOKEN_KEY);
   } catch {
-    // Ignore storage write failures
+    // Ignore storage write failures; memoryToken remains active
   }
 }
 
@@ -43,6 +49,7 @@ function buildHeaders(extra = {}) {
   const tok = getToken();
   if (tok) {
     headers.Authorization = `Bearer ${tok}`;
+    headers['X-Session-Token'] = tok;
   }
   return headers;
 }

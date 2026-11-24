@@ -11,9 +11,15 @@ let pendingSnapshot = null;
 let syncInFlight = false;
 let dirtyWhileSyncing = false;
 let initPromise = null;
+let authEpoch = 0;
+let pollInFlight = false;
 
 export const useAuth = create((set, get) => {
-  const applySharedState = ({ me, userKey, siteConfig, chat, drops, accounts, promoCodes }, forceReloadMe = false) => {
+  const applySharedState = (
+    { me, userKey, siteConfig, chat, drops, accounts, promoCodes, hadToken },
+    forceReloadMe = false,
+    sentToken = ''
+  ) => {
     if (siteConfig) {
       useSiteConfig.getState().applyServerConfig(siteConfig);
     }
@@ -55,25 +61,29 @@ export const useAuth = create((set, get) => {
       }
     } else {
       const wasSignedIn = Boolean(prevKey);
-      if (getToken()) clearToken();
-      pendingSnapshot = null;
-      if (syncTimer) {
-        clearTimeout(syncTimer);
-        syncTimer = null;
+      if (sentToken && hadToken !== false) {
+        clearToken();
       }
-      set({
-        accounts: {},
-        currentUserKey: null,
-        activeAdminRevision: 0,
-        promoCodes: [],
-      });
-      if (wasSignedIn || forceReloadMe) {
-        useGame.getState().loadGuestState();
-        if (!forceReloadMe && wasSignedIn) {
-          useToast.getState().push('Session ended (signed out or banned).', 'info');
+      if (!wasSignedIn || (sentToken && hadToken !== false)) {
+        pendingSnapshot = null;
+        if (syncTimer) {
+          clearTimeout(syncTimer);
+          syncTimer = null;
         }
-      } else if (!get().authReady) {
-        useGame.getState().loadGuestState();
+        set({
+          accounts: {},
+          currentUserKey: null,
+          activeAdminRevision: 0,
+          promoCodes: [],
+        });
+        if (wasSignedIn || forceReloadMe) {
+          useGame.getState().loadGuestState();
+          if (!forceReloadMe && wasSignedIn) {
+            useToast.getState().push('Session ended (signed out or banned).', 'info');
+          }
+        } else if (!get().authReady) {
+          useGame.getState().loadGuestState();
+        }
       }
     }
   };
@@ -116,6 +126,7 @@ export const useAuth = create((set, get) => {
     }
 
     syncInFlight = true;
+    const epochAtStart = authEpoch;
     const payload = {
       data: pendingSnapshot,
       adminRevision: get().activeAdminRevision || 1,
@@ -124,6 +135,10 @@ export const useAuth = create((set, get) => {
 
     try {
       const res = await apiPost('/api/account/sync', payload);
+      if (epochAtStart !== authEpoch) {
+        dirtyWhileSyncing = false;
+        return;
+      }
       if (res.stale && res.account) {
         const curKey = get().currentUserKey;
         const nextRev = Number(res.account.adminRevision) || 1;
@@ -209,11 +224,24 @@ export const useAuth = create((set, get) => {
     },
 
     async syncFromServer(forceReloadMe = false) {
-      const res = await apiGet('/api/state');
-      if (res.ok) {
-        applySharedState(res, forceReloadMe);
+      if (!forceReloadMe && pollInFlight) {
+        return { ok: false, skipped: true };
       }
-      return res;
+      const epochAtStart = authEpoch;
+      const sentToken = getToken();
+      if (!forceReloadMe) pollInFlight = true;
+      try {
+        const res = await apiGet('/api/state');
+        if (epochAtStart !== authEpoch || sentToken !== getToken()) {
+          return { ok: false, stalePoll: true };
+        }
+        if (res.ok) {
+          applySharedState(res, forceReloadMe, sentToken);
+        }
+        return res;
+      } finally {
+        if (!forceReloadMe) pollInFlight = false;
+      }
     },
 
     async initAuth() {
@@ -255,6 +283,7 @@ export const useAuth = create((set, get) => {
     async register(username, password) {
       const res = await apiPost('/api/auth/register', { username, password });
       if (!res.ok) return res;
+      authEpoch += 1;
       setToken(res.token);
       if (res.siteConfig) useSiteConfig.getState().applyServerConfig(res.siteConfig);
       pendingSnapshot = null;
@@ -272,6 +301,7 @@ export const useAuth = create((set, get) => {
     async login(username, password) {
       const res = await apiPost('/api/auth/login', { username, password });
       if (!res.ok) return res;
+      authEpoch += 1;
       setToken(res.token);
       if (res.siteConfig) useSiteConfig.getState().applyServerConfig(res.siteConfig);
       pendingSnapshot = null;
@@ -292,6 +322,7 @@ export const useAuth = create((set, get) => {
         syncTimer = null;
       }
       await flushSync();
+      authEpoch += 1;
       await apiPost('/api/auth/logout', {});
       clearToken();
       pendingSnapshot = null;
