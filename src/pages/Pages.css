@@ -2049,3 +2049,143 @@
     justify-content: space-between;
   }
 }
+
+/* Dopamine Crates & Attractive Homepage Additions */
+.case-session-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: 12px;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  font-size: 12px;
+}
+
+.case-result-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-deep);
+  flex-wrap: wrap;
+}
+
+.case-result-hero.is-profit {
+  background: linear-gradient(95deg, rgba(34, 211, 122, 0.18), rgba(56, 217, 255, 0.12));
+  border-color: rgba(34, 211, 122, 0.45);
+}
+
+.case-result-hero.tier-huge {
+  background: linear-gradient(95deg, rgba(168, 85, 247, 0.24), rgba(236, 72, 153, 0.16));
+  border-color: rgba(168, 85, 247, 0.6);
+}
+
+.case-result-hero.tier-titanic {
+  background: linear-gradient(95deg, rgba(255, 197, 49, 0.26), rgba(245, 169, 19, 0.16));
+  border-color: rgba(255, 197, 49, 0.72);
+  box-shadow: 0 0 24px rgba(255, 197, 49, 0.25);
+}
+
+.case-result-hero.tier-gargantuan {
+  background: linear-gradient(95deg, rgba(236, 72, 153, 0.3), rgba(255, 197, 49, 0.22), rgba(56, 217, 255, 0.2));
+  border-color: rgba(236, 72, 153, 0.8);
+  box-shadow: 0 0 28px rgba(236, 72, 153, 0.3);
+}
+
+.hero-orbit-ring {
+  position: absolute;
+  width: 210px;
+  height: 210px;
+  border-radius: 50%;
+  border: 1px dashed rgba(56, 217, 255, 0.26);
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.16), transparent 68%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hero-jackpot-tag {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(10, 12, 22, 0.9);
+  border: 1px solid rgba(255, 197, 49, 0.45);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+.lobby-big-pulls {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.big-pull-card {
+  flex: 0 0 220px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 13px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+.big-pull-card:hover {
+  transform: translateY(-2px);
+}
+
+.big-pull-huge {
+  background: linear-gradient(120deg, rgba(168, 85, 247, 0.14), var(--panel) 65%);
+  border-color: rgba(168, 85, 247, 0.38);
+}
+
+.big-pull-titanic {
+  background: linear-gradient(120deg, rgba(255, 197, 49, 0.16), var(--panel) 65%);
+  border-color: rgba(255, 197, 49, 0.45);
+}
+
+.big-pull-gargantuan {
+  background: linear-gradient(120deg, rgba(236, 72, 153, 0.2), var(--panel) 65%);
+  border-color: rgba(236, 72, 153, 0.52);
+}
+
+.big-pull-name {
+  font-weight: 700;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crate-unbox-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(79, 107, 255, 0.2);
+  color: #cdd8ff;
+  border: 1px solid rgba(79, 107, 255, 0.4);
+  white-space: nowrap;
+}
+
+.poster-card {
+  background:
+    radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--glow) 28%, transparent), transparent 66%),
+    var(--g);
+}

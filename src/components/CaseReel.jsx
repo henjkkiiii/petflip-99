@@ -50,13 +50,13 @@ export function CaseReel({
   onDoneRef.current = onDone;
 
   // Build 44-item strip whenever a new winner is locked in for a spin
-  const strip = useMemo(() => {
-    if (!items || items.length === 0) return [];
+  const { strip, hadNearMiss } = useMemo(() => {
+    if (!items || items.length === 0) return { strip: [], hadNearMiss: false };
     const rares = items.filter((it) =>
       ['huge', 'titanic', 'gargantuan'].includes(it.tier)
     );
     const addNearMiss =
-      winner?.tier === 'normal' && rares.length > 0 && rand() < 0.58;
+      winner?.tier === 'normal' && rares.length > 0 && rand() < 0.62;
     const nearMissSide = rand() < 0.5 ? WINNER_INDEX - 1 : WINNER_INDEX + 1;
 
     const arr = [];
@@ -69,7 +69,7 @@ export function CaseReel({
         arr.push(weightedPick(items, 'chance'));
       }
     }
-    return arr;
+    return { strip: arr, hadNearMiss: addNearMiss };
   }, [items, winner]);
 
   useEffect(() => {
@@ -84,6 +84,7 @@ export function CaseReel({
     const vpEl = viewportRef.current;
     if (!trackEl || !vpEl) return;
 
+    wrapEl?.classList.remove('reel-climax');
     trackEl.style.transition = 'none';
     trackEl.style.transform = 'translate3d(0px, 0, 0)';
 
@@ -94,6 +95,7 @@ export function CaseReel({
     let startRaf = null;
     let activeTileEl = null;
     let lastTier = '';
+    let climaxApplied = false;
 
     startRaf = requestAnimationFrame(() => {
       const firstTile = trackEl.children[0];
@@ -104,7 +106,7 @@ export function CaseReel({
       const vpWidth = vpEl.clientWidth || 720;
       const centerOffset = vpWidth / 2 - tileW / 2;
       const centerX = -(WINNER_INDEX * stepPx - centerOffset);
-      const jitter = (rand() - 0.5) * (tileW * 0.82);
+      const jitter = (rand() - 0.5) * (tileW * 0.84);
       const landX = centerX + jitter;
 
       let startTime = null;
@@ -119,6 +121,11 @@ export function CaseReel({
 
         trackEl.style.transform = `translate3d(${x.toFixed(2)}px, 0, 0)`;
 
+        if (!climaxApplied && rawT > 0.8) {
+          climaxApplied = true;
+          wrapEl?.classList.add('reel-climax');
+        }
+
         const markerInTrack = vpWidth / 2 - x;
         const idx = Math.floor(markerInTrack / stepPx);
         if (idx !== lastTickIdx && idx >= 0 && idx < TOTAL_TILES) {
@@ -128,11 +135,11 @@ export function CaseReel({
           activeTileEl?.classList.add('reel-tile-active');
 
           // Pitch-ramped tick sound + tease ping on late rares
-          sound.tick(1.18 - rawT * 0.3);
+          sound.tick(1.2 - rawT * 0.34);
           const passingTile = strip[idx];
           const passingTier = passingTile?.tier || 'normal';
           if (
-            rawT > 0.55 &&
+            rawT > 0.52 &&
             ['huge', 'titanic', 'gargantuan'].includes(passingTier)
           ) {
             sound.tease();
@@ -160,6 +167,7 @@ export function CaseReel({
             snapTimer = setTimeout(() => {
               activeTileEl?.classList.remove('reel-tile-active');
               activeTileEl = null;
+              wrapEl?.classList.remove('reel-climax');
               const winTier = winner?.tier || 'normal';
               if (wrapEl) {
                 wrapEl.style.setProperty('--reel-glow', TIER_GLOW[winTier] || TIER_GLOW.normal);
@@ -181,10 +189,12 @@ export function CaseReel({
       if (freezeTimer) clearTimeout(freezeTimer);
       if (snapTimer) clearTimeout(snapTimer);
       activeTileEl?.classList.remove('reel-tile-active');
+      wrapEl?.classList.remove('reel-climax');
     };
   }, [spinning, winner, fast, strip]);
 
   const winTier = winner?.tier || 'normal';
+  const isRareWin = ['huge', 'titanic', 'gargantuan'].includes(winTier);
 
   return (
     <div
@@ -196,9 +206,17 @@ export function CaseReel({
       <div className="case-reel-accent-top" />
       <div className="case-reel-accent-bot" />
 
+      {settled && isRareWin && (
+        <div
+          className="reel-flash-overlay"
+          style={{ '--burst-color': TIER_SOLID[winTier] || TIER_SOLID.huge }}
+        />
+      )}
+
       {!compact && settled && winner?.name && (
         <div className={`reel-win-pill tier-badge tier-badge-${winTier}`}>
           {winner.name}
+          {hadNearMiss && winTier === 'normal' ? ' · SO CLOSE!' : ''}
         </div>
       )}
 

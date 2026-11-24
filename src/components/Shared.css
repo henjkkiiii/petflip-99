@@ -1294,6 +1294,31 @@
   animation: reelPunch 420ms ease-out;
 }
 
+.case-reel-wrap.reel-climax .case-reel-marker {
+  width: 3.5px;
+  box-shadow:
+    0 0 22px rgba(255, 197, 49, 1),
+    0 0 40px rgba(56, 217, 255, 0.75);
+}
+
+.reel-flash-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 50%, var(--burst-color), transparent 72%);
+  animation: reelFlashOut 440ms ease-out forwards;
+}
+
+@keyframes reelFlashOut {
+  0% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @keyframes reelPunch {
   0% {
     transform: scale(0.99);

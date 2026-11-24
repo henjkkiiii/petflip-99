@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -18,6 +18,7 @@ import {
   Sparkles,
   Swords,
   TrendingUp,
+  Trophy,
   Users,
 } from 'lucide-react';
 import ps99 from '../data/ps99.json';
@@ -33,6 +34,7 @@ import {
 } from '../store/useGame.js';
 import { useAuth } from '../store/useAuth.js';
 import { useBattles } from '../store/battles.js';
+import { useDrops } from '../store/drops.js';
 import { getEffectiveCratePrice, useSiteConfig } from '../store/siteConfig.js';
 import { formatGems } from '../lib/format.js';
 
@@ -157,6 +159,7 @@ export function Home() {
   const winStreak = useGame((s) => s.winStreak);
   const claimedRewards = useGame((s) => s.claimedRewards);
   const rooms = useBattles((s) => s.rooms);
+  const drops = useDrops((s) => s.drops);
 
   const crateDiscountPct = useSiteConfig((s) => s.crateDiscountPct);
   const cratePriceOverrides = useSiteConfig((s) => s.cratePriceOverrides);
@@ -167,7 +170,15 @@ export function Home() {
 
   const heroPets = ps99.showcase.slice(0, 4);
   const popularCrates = ps99.crates;
-  const topDrop = ps99.showcase[0]?.value || 0;
+  const topShowcasePet = ps99.showcase[0];
+  const topDrop = topShowcasePet?.value || 0;
+
+  const bigPulls = useMemo(() => {
+    const rares = (drops || []).filter((d) =>
+      ['huge', 'titanic', 'gargantuan'].includes(d?.tier)
+    );
+    return rares.slice(0, 8);
+  }, [drops]);
 
   const now = Date.now();
   const elapsed = now - lastDaily;
@@ -192,15 +203,16 @@ export function Home() {
         <div className="hero-beam" />
         <div style={{ position: 'relative', zIndex: 2 }}>
           <div className="hero-kicker">
+            <span className="poster-dot" />
             <Sparkles size={13} />
-            <span>Pet Simulator 99 Play-Gem Arcade</span>
+            <span>LIVE · {playersOnline} Playing PS99 Gem Games</span>
           </div>
           <h1 className="hero-title">
-            PET SIM 99 <span className="grad-text">GEM GAMES</span>
+            UNBOX <span className="grad-text">HUGES &amp; TITANICS</span>
           </h1>
           <p className="hero-sub">
-            Open {ps99.crates.length} custom PS99 Crates with real pet drops, challenge live
-            players in Case Battles, and play Crash, Mines, Plinko, Towers &amp; more.
+            Open {ps99.crates.length} custom PS99 Crates with real RAP pet drops, battle live
+            players in Case Battles, and chase huge multipliers in Crash, Mines, Plinko &amp; more.
           </p>
           <div className="hero-actions">
             <Link to="/cases" className="btn btn-lg btn-primary">
@@ -220,21 +232,22 @@ export function Home() {
 
           <div className="hero-stats">
             <div className="hero-stat-chip">
-              <span className="hero-stat-label">Players Online</span>
+              <span className="hero-stat-label">Online Now</span>
               <span className="hero-stat-val text-green">{playersOnline}</span>
             </div>
             <div className="hero-stat-chip">
-              <span className="hero-stat-label">Crates</span>
+              <span className="hero-stat-label">Custom Crates</span>
               <span className="hero-stat-val text-purple">{ps99.crates.length}</span>
             </div>
             <div className="hero-stat-chip">
-              <span className="hero-stat-label">Top Drop</span>
-              <span className="hero-stat-val text-gem">{formatGems(topDrop)}</span>
+              <span className="hero-stat-label">Top Jackpot</span>
+              <span className="hero-stat-val text-gold">{formatGems(topDrop)}</span>
             </div>
           </div>
         </div>
 
         <div className="hero-visual">
+          <div className="hero-orbit-ring" />
           <div className="hero-pedestal" />
           <motion.img
             src={GEM_BAG}
@@ -247,8 +260,8 @@ export function Home() {
             const positions = [
               { top: 4, left: '6%', size: 68 },
               { top: 10, right: '6%', size: 64 },
-              { bottom: 4, left: '10%', size: 64 },
-              { bottom: 6, right: '8%', size: 70 },
+              { bottom: 18, left: '8%', size: 64 },
+              { bottom: 18, right: '8%', size: 70 },
             ];
             const pos = positions[idx];
             return (
@@ -257,15 +270,15 @@ export function Home() {
                 className="hero-float-pet"
                 style={{ top: pos.top, bottom: pos.bottom, left: pos.left, right: pos.right }}
                 animate={{
-                  y: [0, idx % 2 === 0 ? -12 : 10, 0],
+                  y: [0, idx % 2 === 0 ? -10 : 8, 0],
                   rotate: [
-                    idx % 2 === 0 ? -5 : 5,
-                    idx % 2 === 0 ? 4 : -4,
-                    idx % 2 === 0 ? -5 : 5,
+                    idx % 2 === 0 ? -4 : 4,
+                    idx % 2 === 0 ? 3 : -3,
+                    idx % 2 === 0 ? -4 : 4,
                   ],
                 }}
                 transition={{
-                  duration: 3.2 + idx * 0.45,
+                  duration: 3.4 + idx * 0.45,
                   repeat: Infinity,
                   ease: 'easeInOut',
                 }}
@@ -279,6 +292,13 @@ export function Home() {
               </motion.div>
             );
           })}
+          {topShowcasePet && (
+            <Link to="/cases/gargantuan-god" className="hero-jackpot-tag">
+              <Crown size={13} className="text-gold" />
+              <span>{topShowcasePet.name}</span>
+              <strong className="text-gold">{formatGems(topShowcasePet.value)}</strong>
+            </Link>
+          )}
         </div>
       </section>
 
@@ -382,6 +402,43 @@ export function Home() {
         )}
       </div>
 
+      {/* Recent Big Pulls Trophy Strip */}
+      {bigPulls.length > 0 && (
+        <>
+          <div className="section-head">
+            <h2>
+              <Trophy size={20} className="text-gold" />
+              <span>Recent Huge+ Pulls</span>
+            </h2>
+            <Link to="/cases" className="btn btn-sm btn-outline">
+              Chase Drops <ArrowRight size={14} />
+            </Link>
+          </div>
+          <div className="lobby-big-pulls">
+            {bigPulls.map((drop) => (
+              <Link
+                key={drop.id}
+                to={`/cases/${drop.crateId}`}
+                className={`big-pull-card big-pull-${drop.tier || 'huge'}`}
+              >
+                <PetImage thumb={drop.thumb} alt={drop.name} size={42} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="big-pull-name" title={drop.name}>
+                    {drop.name}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 2 }}>
+                    <span className="text-muted" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {drop.user}
+                    </span>
+                    <GemAmount value={drop.value} iconSize={12} className="text-gold" />
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="section-head">
         <h2>
           <Flame size={20} className="text-gold" />
@@ -429,7 +486,7 @@ export function Home() {
       <div className="section-head">
         <h2>
           <PackageOpen size={20} className="text-purple" />
-          <span>Popular Crates</span>
+          <span>Featured Jackpot Crates</span>
         </h2>
         <Link to="/cases" className="btn btn-sm btn-outline">
           View All {ps99.crates.length} <ArrowRight size={14} />
@@ -490,8 +547,20 @@ export function Home() {
                   <PetImage key={it.name} thumb={it.thumb} alt={it.name} size={22} />
                 ))}
               </div>
-              <div className="text-gem">
-                <GemAmount value={effPrice} iconSize={14} />
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                  gap: 6,
+                  marginTop: 2,
+                }}
+              >
+                <div className="text-gem">
+                  <GemAmount value={effPrice} iconSize={14} />
+                </div>
+                <span className="crate-unbox-pill">Unbox →</span>
               </div>
             </Link>
           );

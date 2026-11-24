@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, PackageOpen, Sparkles, Trophy, Zap } from 'lucide-react';
+import { ArrowLeft, Crown, Flame, PackageOpen, RotateCw, Sparkles, Trophy, Zap } from 'lucide-react';
 import ps99 from '../data/ps99.json';
 import { weightedPick } from '../lib/rng.js';
 import { formatGems } from '../lib/format.js';
@@ -16,6 +16,8 @@ import { PetImage } from '../components/PetImage.jsx';
 import { GemAmount } from '../components/GemAmount.jsx';
 import { Modal } from '../components/Modal.jsx';
 import { LiveBets } from '../components/LiveBets.jsx';
+
+const TIER_RANK = { normal: 0, huge: 1, titanic: 2, gargantuan: 3 };
 
 export function CaseOpen() {
   const { id } = useParams();
@@ -43,10 +45,18 @@ export function CaseOpen() {
   const [wonStamped, setWonStamped] = useState([]);
   const [lastSpent, setLastSpent] = useState(0);
   const [recentPulls, setRecentPulls] = useState([]);
+  const [sessionOpened, setSessionOpened] = useState(0);
+  const [sessionBest, setSessionBest] = useState(null);
 
   const doneCountRef = useRef(0);
   const activeRunRef = useRef(null);
   const modalTimerRef = useRef(null);
+
+  useEffect(() => {
+    setRecentPulls([]);
+    setSessionOpened(0);
+    setSessionBest(null);
+  }, [id]);
 
   useEffect(() => {
     return () => {
@@ -103,6 +113,14 @@ export function CaseOpen() {
     setWonStamped(stamped);
     setLastSpent(run.totalCost);
     setRecentPulls((prev) => [...stamped, ...prev].slice(0, 6));
+    setSessionOpened((n) => n + stamped.length);
+    setSessionBest((prev) => {
+      const topThisSpin = [...stamped].sort((a, b) => (b.value || 0) - (a.value || 0))[0];
+      if (!prev || (topThisSpin && (topThisSpin.value || 0) > (prev.value || 0))) {
+        return topThisSpin;
+      }
+      return prev;
+    });
 
     const pushDrop = useDrops.getState().pushDrop;
     const uname = useGame.getState().username;
@@ -150,6 +168,21 @@ export function CaseOpen() {
   const netProfit = wonTotal - lastSpent;
   const resultMult = lastSpent > 0 ? (wonTotal / lastSpent).toFixed(2) : '0.00';
 
+  const bestPulledTier = wonStamped.reduce(
+    (best, p) => ((TIER_RANK[p.tier] || 0) > (TIER_RANK[best] || 0) ? p.tier : best),
+    'normal'
+  );
+  const modalHeadline =
+    bestPulledTier === 'gargantuan'
+      ? 'GARGANTUAN JACKPOT!'
+      : bestPulledTier === 'titanic'
+        ? 'TITANIC MEGA PULL!'
+        : bestPulledTier === 'huge'
+          ? 'HUGE PET UNBOXED!'
+          : netProfit >= 0
+            ? 'PROFIT PULL!'
+            : 'UNBOXED!';
+
   const handleSellWon = () => {
     const uids = wonStamped.map((p) => p.uid);
     const res = sellItemsByUids(uids);
@@ -158,6 +191,21 @@ export function CaseOpen() {
       pushToast(`Sold ${res.count} pets for ${formatGems(res.total)} gems!`, 'success');
     }
     setResultModalOpen(false);
+  };
+
+  const handleSellAndSpinAgain = () => {
+    const uids = wonStamped.map((p) => p.uid);
+    const res = sellItemsByUids(uids);
+    if (res.count > 0) {
+      sound.cashout();
+    }
+    setResultModalOpen(false);
+    openCrate();
+  };
+
+  const handleKeepAndSpinAgain = () => {
+    setResultModalOpen(false);
+    openCrate();
   };
 
   return (
@@ -247,15 +295,27 @@ export function CaseOpen() {
           </div>
         </div>
 
-        {topDrop && (
-          <div className="case-chase-pill">
-            <Trophy size={14} className="text-gold" />
-            <span className="text-muted">Top Drop:</span>
-            <PetImage thumb={topDrop.thumb} alt={topDrop.name} size={22} />
-            <strong>{topDrop.name}</strong>
-            <GemAmount value={topDrop.value} iconSize={13} className="text-gold" />
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+          {topDrop && (
+            <div className="case-chase-pill" style={{ marginBottom: 0 }}>
+              <Trophy size={14} className="text-gold" />
+              <span className="text-muted">Top Drop:</span>
+              <PetImage thumb={topDrop.thumb} alt={topDrop.name} size={22} />
+              <strong>{topDrop.name}</strong>
+              <GemAmount value={topDrop.value} iconSize={13} className="text-gold" />
+            </div>
+          )}
+
+          {sessionOpened > 0 && sessionBest && (
+            <div className="case-session-pill">
+              <Flame size={13} className="text-purple" />
+              <span className="text-muted">Opened:</span>
+              <strong>{sessionOpened}</strong>
+              <span className="text-muted">· Best:</span>
+              <strong className="text-gem">{formatGems(sessionBest.value)}</strong>
+            </div>
+          )}
+        </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {Array.from({ length: count }, (_, idx) => (
@@ -275,7 +335,14 @@ export function CaseOpen() {
           <div className="case-recent-strip">
             <span
               className="text-muted"
-              style={{ fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              style={{
+                fontSize: 11.5,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
             >
               <Sparkles size={12} className="text-gem" /> Recent:
             </span>
@@ -319,16 +386,30 @@ export function CaseOpen() {
         title={`Unboxed from ${crate.name}!`}
         maxWidth={560}
       >
-        <div className={`case-result-banner ${netProfit >= 0 ? 'is-profit' : 'is-loss'}`}>
-          <div>
-            <span className="text-muted">Total Value: </span>
-            <strong className="text-gem">{formatGems(wonTotal)}</strong>
-          </div>
+        <div
+          className={`case-result-hero tier-${bestPulledTier} ${
+            netProfit >= 0 ? 'is-profit' : 'is-loss'
+          }`}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className={netProfit >= 0 ? 'text-green' : 'text-red'} style={{ fontWeight: 700 }}>
-              {netProfit >= 0 ? '+' : '-'}
-              {formatGems(Math.abs(netProfit))}
+            <Crown
+              size={18}
+              className={
+                bestPulledTier === 'gargantuan' || bestPulledTier === 'titanic'
+                  ? 'text-gold'
+                  : bestPulledTier === 'huge'
+                    ? 'text-purple'
+                    : netProfit >= 0
+                      ? 'text-green'
+                      : 'text-gem'
+              }
+            />
+            <span style={{ fontWeight: 800, letterSpacing: '0.04em', fontSize: 14 }}>
+              {modalHeadline}
             </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <GemAmount value={wonTotal} animate iconSize={16} className="text-gem" />
             <span className={`mult-pill ${Number(resultMult) >= 1 ? 'mult-green' : 'mult-red'}`}>
               {resultMult}×
             </span>
@@ -341,23 +422,45 @@ export function CaseOpen() {
           ))}
         </div>
 
-        <div className="case-result-actions">
+        <div className="case-result-actions" style={{ flexDirection: 'column' }}>
           <button
             type="button"
-            className="btn btn-lg btn-green"
-            style={{ flex: 1 }}
-            onClick={handleSellWon}
+            className="btn btn-lg btn-gold"
+            style={{ width: '100%' }}
+            onClick={handleSellAndSpinAgain}
           >
-            Sell for {formatGems(wonTotal)}
+            <RotateCw size={17} />
+            <span>
+              Sell ({formatGems(wonTotal)}) &amp; Spin Again ({formatGems(totalCost)})
+            </span>
           </button>
-          <button
-            type="button"
-            className="btn btn-lg btn-outline"
-            style={{ flex: 1 }}
-            onClick={() => setResultModalOpen(false)}
-          >
-            Keep in Inventory
-          </button>
+
+          <div style={{ display: 'flex', gap: 8, width: '100%', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-green"
+              style={{ flex: 1 }}
+              onClick={handleSellWon}
+            >
+              Sell for {formatGems(wonTotal)}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ flex: 1 }}
+              onClick={handleKeepAndSpinAgain}
+            >
+              Keep &amp; Spin Again
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ flex: '0 1 auto' }}
+              onClick={() => setResultModalOpen(false)}
+            >
+              Keep
+            </button>
+          </div>
         </div>
       </Modal>
     </div>
