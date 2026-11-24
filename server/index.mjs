@@ -953,23 +953,43 @@ function pruneTradeQueue() {
   return db.tradeQueue;
 }
 
-function completeDepositJob(job, gems, txId, actorName = 'TradeBot') {
+function completeDepositJob(job, gems, txId, actorName = 'TradeBot', petsOverride = null) {
   if (!job || job.status === 'completed') return false;
   if (txId && db.processedBotTx[txId]) return false;
   const cleanGems = Math.max(0, Math.round(Number(gems) || 0));
-  if (cleanGems <= 0) return false;
+  const rawPets = Array.isArray(petsOverride) ? petsOverride : Array.isArray(job.pets) ? job.pets : [];
+  const cleanPets = rawPets.slice(0, 12).filter((p) => p && p.name);
+  if (cleanGems <= 0 && cleanPets.length === 0) return false;
   const acc = db.accounts[job.userKey];
   if (!acc) return false;
   if (!acc.data) acc.data = createDefaultAccountData(0);
-  acc.data.balance = Math.max(0, (acc.data.balance || 0) + cleanGems);
+  if (cleanGems > 0) {
+    acc.data.balance = Math.max(0, (acc.data.balance || 0) + cleanGems);
+  }
+  const now = Date.now();
+  if (cleanPets.length > 0) {
+    const stamped = cleanPets.map((p) => ({
+      uid: `${now}-${Math.random().toString(36).slice(2, 9)}`,
+      name: String(p.name).slice(0, 80),
+      thumb: p.thumb || '',
+      value: Math.max(0, Math.round(Number(p.value) || 0)),
+      tier: p.tier || 'huge',
+      from: 'In-Game Trade Deposit',
+    }));
+    acc.data.inventory = [...stamped, ...(acc.data.inventory || [])].slice(0, 500);
+  }
   bumpAdminRevision(acc, 'trade');
   job.status = 'completed';
   job.actualGems = cleanGems;
-  job.txId = txId || `tx-${Date.now()}`;
+  job.actualPetsCount = cleanPets.length;
+  job.txId = txId || `tx-${now}`;
   job.completedBy = actorName;
-  job.finishedAt = Date.now();
-  if (txId) db.processedBotTx[txId] = job.finishedAt;
-  logAudit(actorName, `Deposit trade completed for ${acc.username} (${job.robloxUsername}): +${formatGemsServer(cleanGems)} gems`);
+  job.finishedAt = now;
+  if (txId) db.processedBotTx[txId] = now;
+  logAudit(
+    actorName,
+    `Deposit trade completed for ${acc.username} (${job.robloxUsername}): +${formatGemsServer(cleanGems)} gems, +${cleanPets.length} pets`
+  );
   return true;
 }
 
@@ -1045,8 +1065,8 @@ async function handleApi(req, res, pathname) {
     }
     if (pathname === '/api/bot/deposit-complete') {
       if (job.type !== 'deposit') return sendJson(res, 400, { ok: false, error: 'Not a deposit job.' });
-      if (!completeDepositJob(job, body.gems, body.txId, 'TradeBot')) {
-        return sendJson(res, 400, { ok: false, error: 'Could not complete deposit (duplicate tx or invalid gems).' });
+      if (!completeDepositJob(job, body.gems, body.txId, 'TradeBot', body.pets)) {
+        return sendJson(res, 400, { ok: false, error: 'Could not complete deposit (duplicate tx or empty deposit).' });
       }
       saveDb();
       return sendJson(res, 200, { ok: true, job });
@@ -1805,6 +1825,15 @@ async function handleApi(req, res, pathname) {
       me.data.balance = Math.max(0, (me.data.balance || 0) - amount);
       bumpAdminRevision(me, 'trade');
     }
+    const rawPets = type === 'deposit' && Array.isArray(body.pets) ? body.pets.slice(0, 12) : [];
+    const cleanPets = rawPets
+      .filter((p) => p && p.name)
+      .map((p) => ({
+        name: String(p.name).slice(0, 80),
+        thumb: String(p.thumb || ''),
+        value: Math.max(0, Math.round(Number(p.value) || 0)),
+        tier: String(p.tier || 'huge'),
+      }));
     const now = Date.now();
     const job = {
       id: `tr-${now}-${crypto.randomBytes(3).toString('hex')}`,
@@ -1813,7 +1842,9 @@ async function handleApi(req, res, pathname) {
       username: me.username,
       robloxUsername,
       amount: Math.max(0, amount),
+      pets: cleanPets,
       actualGems: 0,
+      actualPetsCount: 0,
       status: 'waiting',
       refunded: false,
       createdAt: now,

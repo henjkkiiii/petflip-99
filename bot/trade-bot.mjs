@@ -27,6 +27,7 @@ function ps(args) {
 }
 
 function ocrRect(rect) {
+  if (!rect) return '';
   return ps([
     '-Action',
     'ocr-rect',
@@ -42,10 +43,12 @@ function ocrRect(rect) {
 }
 
 function clickPoint(pt) {
+  if (!pt) return;
   ps(['-Action', 'click', '-X1', String(pt.x), '-Y1', String(pt.y)]);
 }
 
 function typeAt(pt, text) {
+  if (!pt) return;
   ps(['-Action', 'type-text', '-X1', String(pt.x), '-Y1', String(pt.y), '-Text', String(text)]);
 }
 
@@ -56,6 +59,17 @@ function parseOcrGems(text) {
   const num = Number(m[1]);
   const mult = { K: 1e3, M: 1e6, B: 1e9, T: 1e12 }[(m[2] || '').toUpperCase()] || 1;
   return Math.round(num * mult);
+}
+
+function normUser(str) {
+  return String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function matchesUser(ocrText, robloxUsername) {
+  const cleanOcr = normUser(ocrText);
+  const cleanUser = normUser(robloxUsername);
+  if (!cleanOcr || !cleanUser) return false;
+  return cleanOcr.includes(cleanUser);
 }
 
 async function api(pathSuffix, method = 'GET', body = null) {
@@ -70,26 +84,112 @@ async function api(pathSuffix, method = 'GET', body = null) {
   return res.json();
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q) => new Promise((resolve) => rl.question(q, resolve));
 
-console.log(`=== PETFLIP 99 Main-Monitor Trade Bot ===`);
+async function waitForConfirmButton(timeoutMs = 35_000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const modalText = ocrRect(coords.completedBox).toLowerCase();
+    if (
+      (modalText.includes('are you sure') || modalText.includes('anything from this trade')) &&
+      coords.modalYesBtn
+    ) {
+      console.log('  Handling "Are you sure?" popup -> clicking Yes!');
+      clickPoint(coords.modalYesBtn);
+      await sleep(700);
+      continue;
+    }
+    const btnText = ocrRect(coords.actionBtnBox).toLowerCase();
+    if (btnText.includes('confirm') && !btnText.includes('unconfirm')) {
+      return true;
+    }
+    await sleep(600);
+  }
+  return false;
+}
+
+async function waitForTradeCompleted(timeoutMs = 15_000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const msg = ocrRect(coords.completedBox).toLowerCase();
+    if (msg.includes('are you sure') || msg.includes('anything from this trade')) {
+      if (coords.modalYesBtn) {
+        console.log('  Handling "Are you sure?" popup -> clicking Yes!');
+        await sleep(250);
+        clickPoint(coords.modalYesBtn);
+        await sleep(900);
+        continue;
+      }
+    }
+    if (msg.includes('completed') || msg.includes('successfully')) {
+      if (coords.okPopupBtn) {
+        await sleep(300);
+        clickPoint(coords.okPopupBtn);
+      }
+      await sleep(800);
+      const afterMsg = ocrRect(coords.completedBox).toLowerCase();
+      if (afterMsg.includes('friend') && coords.friendNoBtn) {
+        console.log('  Closing "Friend user?" popup -> No');
+        clickPoint(coords.friendNoBtn);
+      }
+      return true;
+    }
+    if (msg.includes('friend') && coords.friendNoBtn) {
+      clickPoint(coords.friendNoBtn);
+      return true;
+    }
+    await sleep(700);
+  }
+  return false;
+}
+
+console.log('=== PETFLIP 99 Main-Monitor Trade Bot ===');
 console.log(`Site: ${SITE_URL}`);
 console.log(`Mode: ${AUTO_APPROVE ? 'AUTO-CONFIRM (--auto)' : 'SAFE TEST (asks Y/n before clicking Confirm)'}`);
-console.log('Watching Trade Queue every 2.5s...\n');
+console.log('Watching Trade Queue & Roblox Trade Window every 2s...\n');
+
+let lastQueueSig = '';
 
 async function loop() {
   while (true) {
     try {
       const q = await api('/api/bot/queue');
       const jobs = q?.jobs || [];
+      const sig = jobs.map((j) => `${j.id}:${j.status}`).join('|');
+      if (sig !== lastQueueSig) {
+        lastQueueSig = sig;
+        if (jobs.length === 0) {
+          console.log('[QUEUE] Empty — waiting for new deposit/withdraw requests...');
+        } else {
+          console.log(
+            `[QUEUE] ${jobs.length} active job(s): ` +
+              jobs.map((j) => `${j.type.toUpperCase()} ${j.robloxUsername} (${j.amount})`).join(', ')
+          );
+        }
+      }
+
       if (jobs.length > 0) {
-        const traderText = ocrRect(coords.traderNameBox).toLowerCase();
-        const match = jobs.find(
-          (j) =>
-            j.robloxUsername &&
-            traderText.includes(j.robloxUsername.toLowerCase())
-        );
+        // 1) Check if an incoming trade popup ("Trade from @username") is visible at the top
+        if (coords.popupBox && coords.acceptPopupBtn) {
+          const popupText = ocrRect(coords.popupBox);
+          if (popupText) {
+            const popupMatch = jobs.find((j) => matchesUser(popupText, j.robloxUsername));
+            if (popupMatch) {
+              console.log(`[POPUP] Matched "${popupText}" -> clicking Yes! for ${popupMatch.robloxUsername}`);
+              clickPoint(coords.acceptPopupBtn);
+              await sleep(1200);
+            }
+          }
+        }
+
+        // 2) Check if a trade window is open with a queued player
+        const traderText = ocrRect(coords.traderNameBox);
+        if (traderText) {
+          console.log(`[OCR] Trader box: "${traderText}"`);
+        }
+        const match = jobs.find((j) => matchesUser(traderText, j.robloxUsername));
 
         if (match) {
           console.log(
@@ -99,32 +199,78 @@ async function loop() {
 
           if (match.type === 'withdraw') {
             typeAt(coords.myGemInputBtn, String(match.amount));
-            await new Promise((r) => setTimeout(r, 400));
+            await sleep(450);
             clickPoint(coords.readyBtn);
+            console.log('  Clicked Ready! Waiting for other player to Ready up -> Confirm...');
+
+            const confirmAppeared = await waitForConfirmButton(35_000);
+            if (!confirmAppeared) {
+              console.log('  [TIMEOUT] Other player did not Ready up in time -> Cancelling.');
+              clickPoint(coords.declineBtn);
+              await api('/api/bot/cancel', 'POST', { jobId: match.id, reason: 'Timed out waiting for Ready' });
+              continue;
+            }
+
             const ok = AUTO_APPROVE
               ? 'y'
-              : (await ask(`Typed ${match.amount} gems & clicked Ready. Click Confirm & mark sent? (y/N): `)).trim().toLowerCase();
+              : (await ask(`Confirm button is active! Send ${match.amount.toLocaleString()} gems? (y/N): `))
+                  .trim()
+                  .toLowerCase();
 
             if (ok === 'y' || ok === 'yes') {
               clickPoint(coords.confirmBtn);
-              await new Promise((r) => setTimeout(r, 1500));
+              console.log('  Clicked Confirm! Waiting for trade completion...');
+              await waitForTradeCompleted(15_000);
               await api('/api/bot/withdraw-complete', 'POST', {
                 jobId: match.id,
                 txId: `wd-${match.id}-${Date.now()}`,
               });
-              console.log(`  [DONE] Withdraw marked sent!`);
+              console.log('  [DONE] Withdraw marked sent!');
             } else {
               clickPoint(coords.declineBtn);
               await api('/api/bot/cancel', 'POST', { jobId: match.id, reason: 'Operator declined' });
-              console.log(`  [CANCELLED] Refunded withdraw.`);
+              console.log('  [CANCELLED] Refunded withdraw.');
             }
           } else {
+            // Deposit: WAIT until opponent adds gems/pets or clicks Ready! (never rush while 0)
+            console.log('  Waiting for opponent to add gems/pets or Ready up...');
+            let detectedGems = 0;
+            let detectedTradeVal = 0;
+            let opponentReady = false;
+            const waitStart = Date.now();
+            while (Date.now() - waitStart < 60_000) {
+              detectedGems = parseOcrGems(ocrRect(coords.theirGemsBox));
+              detectedTradeVal = coords.theirTradeValueBox
+                ? parseOcrGems(ocrRect(coords.theirTradeValueBox))
+                : 0;
+              const offerText = coords.theirOfferBox ? ocrRect(coords.theirOfferBox).toLowerCase() : '';
+              opponentReady = offerText.includes('ready');
+              if (opponentReady || detectedGems > 0 || detectedTradeVal > 0) {
+                break;
+              }
+              await sleep(800);
+            }
+
+            // Give 1.8s for PS99's (1.4) anti-scam timer & final item updates to settle
+            await sleep(1800);
             const rawGems = ocrRect(coords.theirGemsBox);
-            const detectedGems = parseOcrGems(rawGems);
-            console.log(`  OCR saw opponent gems: "${rawGems}" -> ${detectedGems.toLocaleString()}`);
-            let finalGems = detectedGems || match.amount;
+            detectedGems = parseOcrGems(rawGems);
+            detectedTradeVal = coords.theirTradeValueBox
+              ? parseOcrGems(ocrRect(coords.theirTradeValueBox))
+              : detectedGems;
+            const queuedPets = Array.isArray(match.pets) ? match.pets.slice(0, 12) : [];
+
+            console.log(
+              `  OCR saw Gems: "${rawGems}" -> ${detectedGems.toLocaleString()} | Trade Value: ${detectedTradeVal.toLocaleString()} | Queued Pets: ${queuedPets.length}/12`
+            );
+
+            let finalGems = detectedGems;
             if (!AUTO_APPROVE) {
-              const ans = (await ask(`Credit how many gems? (Enter for ${finalGems}, or type number, or 'n' to decline): `)).trim();
+              const ans = (
+                await ask(
+                  `Accept & credit ${finalGems.toLocaleString()} gems + ${queuedPets.length} queued pet(s)? (Enter=yes, number=override gems, 'n'=decline): `
+                )
+              ).trim();
               if (ans.toLowerCase() === 'n') {
                 clickPoint(coords.declineBtn);
                 await api('/api/bot/cancel', 'POST', { jobId: match.id, reason: 'Operator declined' });
@@ -132,23 +278,39 @@ async function loop() {
               }
               if (ans) finalGems = parseOcrGems(ans);
             }
+
             clickPoint(coords.readyBtn);
-            await new Promise((r) => setTimeout(r, 800));
+            console.log('  Clicked Ready! Waiting for other player to Ready up -> Confirm...');
+            const confirmAppeared = await waitForConfirmButton(35_000);
+            if (!confirmAppeared) {
+              console.log('  [TIMEOUT] Other player did not Ready up -> Cancelling.');
+              clickPoint(coords.declineBtn);
+              await api('/api/bot/cancel', 'POST', { jobId: match.id, reason: 'Timed out waiting for Ready' });
+              continue;
+            }
+
+            const recheckGems = parseOcrGems(ocrRect(coords.theirGemsBox));
+            if (recheckGems > 0) finalGems = recheckGems;
+
             clickPoint(coords.confirmBtn);
-            await new Promise((r) => setTimeout(r, 1500));
+            console.log('  Clicked Confirm! Waiting for trade completion...');
+            await waitForTradeCompleted(15_000);
             await api('/api/bot/deposit-complete', 'POST', {
               jobId: match.id,
               gems: finalGems,
+              pets: queuedPets,
               txId: `dep-${match.id}-${Date.now()}`,
             });
-            console.log(`  [DONE] Credited +${finalGems.toLocaleString()} gems!`);
+            console.log(
+              `  [DONE] Credited +${finalGems.toLocaleString()} gems & +${queuedPets.length} pet(s) to inventory!`
+            );
           }
         }
       }
     } catch (err) {
       console.error('Bot loop error:', err.message);
     }
-    await new Promise((r) => setTimeout(r, 2500));
+    await sleep(2000);
   }
 }
 

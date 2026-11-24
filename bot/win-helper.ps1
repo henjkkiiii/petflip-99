@@ -13,14 +13,67 @@ Add-Type -AssemblyName System.Drawing
 $win32 = @"
 using System;
 using System.Runtime.InteropServices;
+
+[StructLayout(LayoutKind.Sequential)]
+public struct MOUSEINPUT {
+  public int dx;
+  public int dy;
+  public uint mouseData;
+  public uint dwFlags;
+  public uint time;
+  public IntPtr dwExtraInfo;
+}
+
+[StructLayout(LayoutKind.Explicit)]
+public struct INPUT {
+  [FieldOffset(0)] public uint type;
+  [FieldOffset(8)] public MOUSEINPUT mi;
+}
+
 public class WinInput {
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
-  [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
-  public const uint LEFTDOWN = 0x02;
-  public const uint LEFTUP = 0x04;
+  [DllImport("user32.dll")] public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+  public const uint INPUT_MOUSE = 0;
+  public const uint MOUSEEVENTF_MOVE = 0x0001;
+  public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+  public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+
+  public static void SendMouse(uint flags, int dx = 0, int dy = 0) {
+    INPUT[] inp = new INPUT[1];
+    inp[0].type = INPUT_MOUSE;
+    inp[0].mi.dx = dx;
+    inp[0].mi.dy = dy;
+    inp[0].mi.dwFlags = flags;
+    SendInput(1, inp, Marshal.SizeOf(typeof(INPUT)));
+  }
 }
 "@
 Add-Type -TypeDefinition $win32
+
+function Focus-Roblox {
+  $p = Get-Process -Name "RobloxPlayerBeta" -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($p -and $p.MainWindowHandle -ne [IntPtr]::Zero) {
+    [WinInput]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
+    Start-Sleep -Milliseconds 100
+  }
+}
+
+function Do-Click($x, $y) {
+  Focus-Roblox
+  [WinInput]::SetCursorPos($x - 3, $y - 3) | Out-Null
+  Start-Sleep -Milliseconds 35
+  [WinInput]::SendMouse([WinInput]::MOUSEEVENTF_MOVE, 3, 3)
+  [WinInput]::SetCursorPos($x, $y) | Out-Null
+  Start-Sleep -Milliseconds 120
+  [WinInput]::SendMouse([WinInput]::MOUSEEVENTF_MOVE, 1, 0)
+  Start-Sleep -Milliseconds 30
+  [WinInput]::SendMouse([WinInput]::MOUSEEVENTF_LEFTDOWN, 0, 0)
+  Start-Sleep -Milliseconds 120
+  [WinInput]::SendMouse([WinInput]::MOUSEEVENTF_LEFTUP, 0, 0)
+}
 
 if ($Action -eq "get-cursor") {
   $p = [System.Windows.Forms.Cursor]::Position
@@ -28,24 +81,31 @@ if ($Action -eq "get-cursor") {
   exit 0
 }
 
+if ($Action -eq "wait-f8") {
+  while (([WinInput]::GetAsyncKeyState(0x77) -band 0x8000) -ne 0) {
+    Start-Sleep -Milliseconds 40
+  }
+  while (([WinInput]::GetAsyncKeyState(0x77) -band 0x8000) -eq 0) {
+    Start-Sleep -Milliseconds 40
+  }
+  $p = [System.Windows.Forms.Cursor]::Position
+  while (([WinInput]::GetAsyncKeyState(0x77) -band 0x8000) -ne 0) {
+    Start-Sleep -Milliseconds 40
+  }
+  Write-Output ("{0},{1}" -f $p.X, $p.Y)
+  exit 0
+}
+
 if ($Action -eq "click") {
-  [WinInput]::SetCursorPos($X1, $Y1) | Out-Null
-  Start-Sleep -Milliseconds 80
-  [WinInput]::mouse_event([WinInput]::LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
-  Start-Sleep -Milliseconds 40
-  [WinInput]::mouse_event([WinInput]::LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
+  Do-Click $X1 $Y1
   exit 0
 }
 
 if ($Action -eq "type-text") {
-  [WinInput]::SetCursorPos($X1, $Y1) | Out-Null
-  Start-Sleep -Milliseconds 90
-  [WinInput]::mouse_event([WinInput]::LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
-  Start-Sleep -Milliseconds 40
-  [WinInput]::mouse_event([WinInput]::LEFTUP, 0, 0, 0, [UIntPtr]::Zero)
-  Start-Sleep -Milliseconds 120
+  Do-Click $X1 $Y1
+  Start-Sleep -Milliseconds 150
   [System.Windows.Forms.SendKeys]::SendWait("^a")
-  Start-Sleep -Milliseconds 80
+  Start-Sleep -Milliseconds 90
   [System.Windows.Forms.SendKeys]::SendWait($Text)
   exit 0
 }
@@ -61,7 +121,6 @@ if ($Action -eq "ocr-rect") {
   $g.CopyFromScreen($left, $top, 0, 0, $bmp.Size)
   $g.Dispose()
 
-  # Scale up 2x for much sharper Windows OCR on Roblox UI text
   $scaled = New-Object System.Drawing.Bitmap(($width * 2), ($height * 2))
   $gs = [System.Drawing.Graphics]::FromImage($scaled)
   $gs.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
