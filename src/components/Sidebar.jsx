@@ -25,7 +25,7 @@ import { useAuth } from '../store/useAuth.js';
 
 const MAIN_LINKS = [
   { to: '/', label: 'Lobby', icon: Home },
-  { to: '/cases', label: 'Crates', icon: PackageOpen, badge: '5% EDGE' },
+  { to: '/cases', label: 'Crates', icon: PackageOpen },
   { to: '/battles', label: 'Case Battles', icon: Swords, badge: 'HOT' },
 ];
 
@@ -47,7 +47,7 @@ const ACCOUNT_LINKS = [
   { to: '/profile', label: 'Profile', icon: User },
 ];
 
-export function Sidebar({ onOpenFairness }) {
+export function Sidebar() {
   const currentUserKey = useAuth((s) => s.currentUserKey);
   const accounts = useAuth((s) => s.accounts);
   const isAdmin = Boolean(currentUserKey && accounts[currentUserKey]?.role === 'admin');
@@ -142,21 +142,6 @@ export function Sidebar({ onOpenFairness }) {
               </span>
             </NavLink>
           )}
-
-          <button
-            type="button"
-            className="nav-link"
-            onClick={() => {
-              sound.click();
-              onOpenFairness?.();
-            }}
-            title="Provably Fair"
-          >
-            <span className="nav-icon">
-              <ShieldCheck size={17} />
-            </span>
-            <span className="nav-label">Provably Fair</span>
-          </button>
         </div>
       </div>
 

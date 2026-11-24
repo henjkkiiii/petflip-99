@@ -188,12 +188,19 @@ export const useBattles = create((set, get) => ({
         let winnerSeat = null;
         if (isLast) {
           let best = -1;
+          let tiedSeats = [];
           updatedPlayers.forEach((p, idx) => {
-            if (p && p.total > best) {
+            if (!p) return;
+            if (p.total > best) {
               best = p.total;
-              winnerSeat = idx;
+              tiedSeats = [idx];
+            } else if (p.total === best) {
+              tiedSeats.push(idx);
             }
           });
+          if (tiedSeats.length > 0) {
+            winnerSeat = tiedSeats[randInt(0, tiedSeats.length - 1)];
+          }
         }
         return {
           ...r,

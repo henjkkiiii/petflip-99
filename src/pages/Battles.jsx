@@ -98,7 +98,7 @@ export function Battles() {
           </h1>
           <div className="text-muted" style={{ fontSize: 13.5 }}>
             Unbox custom PS99 crates head-to-head against bots — highest total pet value takes
-            everything! (5% House Edge · Live PS99 RAP)
+            everything! (Live PS99 RAP)
           </div>
         </div>
 

@@ -25,15 +25,15 @@ async function sha256Hex(str) {
 }
 
 const HOUSE_EDGES = [
-  { game: 'Blackjack', edge: '~0.6%–2%' },
-  { game: 'Mines', edge: '3.00%' },
-  { game: 'Dice', edge: '4.00%' },
-  { game: 'Towers', edge: '4.00%' },
-  { game: 'Plinko', edge: '~3.2%–4.9%' },
-  { game: 'Crash & Limbo', edge: '5.00%' },
-  { game: 'Coinflip', edge: '5.00% (1.90×)' },
-  { game: 'Crates & Battles', edge: '5.00% (Live RAP)' },
-  { game: 'Roulette', edge: '6.67%' },
+  { game: 'Mines', edge: '12.00%' },
+  { game: 'Dice', edge: '12.00%' },
+  { game: 'Towers', edge: '12.00%' },
+  { game: 'Crash & Limbo', edge: '12.00%' },
+  { game: 'Coinflip', edge: '12.00% (1.76×)' },
+  { game: 'Crates & Battles', edge: '~12.0% (Live RAP)' },
+  { game: 'Blackjack', edge: '~12.4%' },
+  { game: 'Plinko', edge: '~12.0%–14.5%' },
+  { game: 'Roulette', edge: '~13.3%–13.7%' },
 ];
 
 export function FairnessModal({ open, onClose }) {

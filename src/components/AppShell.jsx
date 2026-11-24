@@ -48,13 +48,12 @@ export function AppShell({ children }) {
 
   return (
     <div className="app-shell">
-      <Sidebar onOpenFairness={() => setFairnessOpen(true)} />
+      <Sidebar />
 
       <div className="app-center">
         <Topbar
           onOpenDeposit={() => setDepositOpen(true)}
           onOpenWithdraw={() => setWithdrawOpen(true)}
-          onOpenFairness={() => setFairnessOpen(true)}
           onToggleChat={() => setChatOpen((o) => !o)}
           chatOpen={chatOpen}
         />
@@ -79,7 +78,20 @@ export function AppShell({ children }) {
 
         <footer className="app-footer">
           Fan-made demo. Play-money gems only – no real value, no real deposits. Not affiliated with
-          BIG Games or Roblox.
+          BIG Games or Roblox.{' '}
+          <button
+            type="button"
+            onClick={() => setFairnessOpen(true)}
+            style={{
+              color: 'inherit',
+              textDecoration: 'underline',
+              opacity: 0.72,
+              fontSize: 'inherit',
+              marginLeft: 4,
+            }}
+          >
+            Fairness &amp; House Edge
+          </button>
         </footer>
       </div>
 

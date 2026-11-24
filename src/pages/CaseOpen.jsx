@@ -194,7 +194,7 @@ export function CaseOpen() {
                 )}
               </div>
               <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>
-                5% House Edge · Live PS99 RAP · {crate.desc}
+                Live PS99 RAP · {crate.desc}
               </div>
             </div>
           </div>

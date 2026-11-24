@@ -26,7 +26,7 @@ export function weightedPick(items, weightKey = 'chance') {
   return items[items.length - 1];
 }
 
-export function crashPoint(edge = 0.05) {
+export function crashPoint(edge = 0.12) {
   const r = rand();
   return Math.max(1, Math.floor(((1 - edge) * 100) / (1 - r)) / 100);
 }

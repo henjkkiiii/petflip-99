@@ -104,9 +104,9 @@ export function Blackjack() {
     if (pVal > 21) {
       msg = 'Bust! Dealer wins.';
     } else if (isBlackjackWin && dVal !== 21) {
-      mult = 2.5;
-      winAmt = Math.round(stake * 2.5);
-      msg = `BLACKJACK! Won ${formatGems(winAmt)} (3:2)!`;
+      mult = 2.2;
+      winAmt = Math.round(stake * 2.2);
+      msg = `BLACKJACK! Won ${formatGems(winAmt)} (6:5)!`;
     } else if (dVal === 21 && dCards.length === 2 && !(pVal === 21 && pCards.length === 2)) {
       msg = 'Dealer has Blackjack!';
     } else if (dVal > 21 || pVal > dVal) {
@@ -114,9 +114,7 @@ export function Blackjack() {
       winAmt = stake * 2;
       msg = `You win ${formatGems(winAmt)}!`;
     } else if (pVal === dVal) {
-      mult = 1;
-      winAmt = stake;
-      msg = 'Push — bet returned.';
+      msg = 'Tie — dealer wins.';
     } else {
       msg = 'Dealer wins.';
     }
@@ -132,16 +130,13 @@ export function Blackjack() {
     setOutcomeMsg(msg);
     setPhase('done');
 
-    if (mult >= 2.5) {
+    if (mult >= 2.2) {
       sound.bigWin();
       fireConfetti(true);
       pushToast(msg, 'success');
     } else if (mult === 2) {
       sound.win();
       pushToast(msg, 'success');
-    } else if (mult === 1) {
-      sound.tick();
-      pushToast(msg, 'info');
     } else {
       sound.lose();
     }
@@ -183,8 +178,8 @@ export function Blackjack() {
 
     const currentDealer = [...dHand];
     const step = () => {
-      const val = handValue(currentDealer).total;
-      if (val < 17) {
+      const hv = handValue(currentDealer);
+      if (hv.total < 17 || (hv.total === 17 && hv.isSoft)) {
         currentDealer.push(drawCard());
         setDealerCards([...currentDealer]);
         sound.deal();
@@ -242,7 +237,7 @@ export function Blackjack() {
   return (
     <GameLayout
       title="Blackjack"
-      subtitle="6-deck shoe · Dealer stands on all 17s · Blackjack pays 3:2"
+      subtitle="6-deck shoe · Dealer hits soft 17 & wins ties · Blackjack pays 6:5"
       icon={<Spade size={26} className="text-gem" />}
       controls={
         <>
@@ -287,11 +282,6 @@ export function Blackjack() {
               <strong>{formatGems(lockedBet)}</strong>
             </div>
           )}
-
-          <div className="stat-box">
-            <span className="text-muted">House Edge</span>
-            <strong>~0.6%–2%</strong>
-          </div>
         </>
       }
       board={

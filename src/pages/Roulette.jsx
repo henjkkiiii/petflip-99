@@ -13,7 +13,7 @@ import { GemAmount } from '../components/GemAmount.jsx';
 
 // 15 slots: 1 gold (0), 7 red, 7 purple
 const WHEEL_SLOTS = [
-  { color: 'gold', label: '14×' },
+  { color: 'gold', label: '13×' },
   { color: 'red', label: '1' },
   { color: 'purple', label: '8' },
   { color: 'red', label: '2' },
@@ -162,7 +162,7 @@ export function Roulette() {
           const bets = userBetsRef.current;
           const totalBet = bets.red + bets.gold + bets.purple;
           if (totalBet > 0) {
-            const mult = winner.color === 'gold' ? 14 : 2;
+            const mult = winner.color === 'gold' ? 13 : 1.85;
             const winAmt = Math.round(bets[winner.color] * mult);
             const effMult = winAmt / totalBet;
             if (winAmt > 0) payout(winAmt);
@@ -219,7 +219,7 @@ export function Roulette() {
   return (
     <GameLayout
       title="Roulette"
-      subtitle="Bet Red (2×), Purple (2×), or Gold (14×) every 15 seconds."
+      subtitle="Bet Red (1.85×), Purple (1.85×), or Gold (13×) every 15 seconds."
       icon={<Disc size={26} className="text-red" />}
       controls={
         <>
@@ -236,7 +236,7 @@ export function Roulette() {
               disabled={phase !== 'betting'}
               onClick={() => placeColorBet('red')}
             >
-              Bet Red (2×)
+              Bet Red (1.85×)
             </button>
             <button
               type="button"
@@ -244,7 +244,7 @@ export function Roulette() {
               disabled={phase !== 'betting'}
               onClick={() => placeColorBet('gold')}
             >
-              Bet Gold (14×)
+              Bet Gold (13×)
             </button>
             <button
               type="button"
@@ -252,7 +252,7 @@ export function Roulette() {
               disabled={phase !== 'betting'}
               onClick={() => placeColorBet('purple')}
             >
-              Bet Purple (2×)
+              Bet Purple (1.85×)
             </button>
           </div>
 
@@ -261,11 +261,6 @@ export function Roulette() {
             <strong>
               {formatGems(userBets.red + userBets.gold + userBets.purple)}
             </strong>
-          </div>
-
-          <div className="stat-box">
-            <span className="text-muted">House Edge</span>
-            <strong>6.67%</strong>
           </div>
         </>
       }
@@ -347,9 +342,9 @@ export function Roulette() {
 
           <div className="roulette-cols">
             {[
-              { key: 'red', title: 'Red 2×', color: 'var(--red)' },
-              { key: 'gold', title: 'Gold 14×', color: 'var(--gold)' },
-              { key: 'purple', title: 'Purple 2×', color: 'var(--purple)' },
+              { key: 'red', title: 'Red 1.85×', color: 'var(--red)' },
+              { key: 'gold', title: 'Gold 13×', color: 'var(--gold)' },
+              { key: 'purple', title: 'Purple 1.85×', color: 'var(--purple)' },
             ].map((col) => (
               <div
                 key={col.key}

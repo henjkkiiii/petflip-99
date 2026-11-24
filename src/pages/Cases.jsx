@@ -42,7 +42,7 @@ export function Cases() {
             <span>PS99 Custom Crates ({ps99.crates.length})</span>
           </h1>
           <div className="text-muted" style={{ fontSize: 13.5 }}>
-            Custom PS99-themed crates with real PS99 pet drops · 5% House Edge · Live RAP
+            Custom PS99-themed crates with real PS99 pet drops · Live RAP
           </div>
         </div>
 

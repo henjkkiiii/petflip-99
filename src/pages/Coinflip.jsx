@@ -76,12 +76,12 @@ export function Coinflip() {
     });
 
     const t = setTimeout(() => {
-      const winAmt = win ? Math.round(bet * 1.9) : 0;
+      const winAmt = win ? Math.round(bet * 1.76) : 0;
       if (winAmt > 0) payout(winAmt);
       recordBet({
         game: 'Coinflip',
         amount: bet,
-        multiplier: win ? 1.9 : 0,
+        multiplier: win ? 1.76 : 0,
         payout: winAmt,
       });
 
@@ -150,7 +150,7 @@ export function Coinflip() {
   return (
     <GameLayout
       title="Coinflip"
-      subtitle="Diamond vs Huge — 3D 50/50 coin toss paying 1.90×!"
+      subtitle="Diamond vs Huge — 3D 50/50 coin toss paying 1.76×!"
       icon={<Coins size={26} className="text-gold" />}
       controls={
         <>
@@ -190,17 +190,12 @@ export function Coinflip() {
             disabled={busy}
             onClick={createGame}
           >
-            Create Coinflip (1.90×)
+            Create Coinflip (1.76×)
           </button>
 
           <div className="stat-box">
             <span className="text-muted">Win Payout</span>
-            <strong className="text-green">{formatGems(Math.round(betAmount * 1.9))}</strong>
-          </div>
-
-          <div className="stat-box">
-            <span className="text-muted">House Edge</span>
-            <strong>5%</strong>
+            <strong className="text-green">{formatGems(Math.round(betAmount * 1.76))}</strong>
           </div>
         </>
       }
@@ -244,7 +239,7 @@ export function Coinflip() {
                 >
                   {activeMatch.outcome.toUpperCase()} landed —{' '}
                   {activeMatch.win
-                    ? `You won ${formatGems(Math.round(activeMatch.bet * 1.9))}!`
+                    ? `You won ${formatGems(Math.round(activeMatch.bet * 1.76))}!`
                     : `${activeMatch.opponentName} won!`}
                 </span>
               )}

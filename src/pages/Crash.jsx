@@ -484,11 +484,6 @@ export function Crash() {
                 : 'Wait for Next Round…'}
             </button>
           )}
-
-          <div className="stat-box">
-            <span className="text-muted">House Edge</span>
-            <strong>5% (1.00×–∞)</strong>
-          </div>
         </>
       }
       board={

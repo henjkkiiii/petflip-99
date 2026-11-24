@@ -16,7 +16,7 @@ function calcMinesMult(picks, minesCount) {
   for (let i = 0; i < picks; i++) {
     prod *= (25 - i) / (25 - minesCount - i);
   }
-  return Math.floor(0.97 * prod * 100) / 100;
+  return Math.floor(0.88 * prod * 100) / 100;
 }
 
 export function Mines() {
@@ -192,11 +192,6 @@ export function Mines() {
             <strong className={currentProfit > 0 ? 'text-green' : 'text-muted'}>
               {active && safePicked > 0 ? `+${formatGems(currentProfit)}` : '0'}
             </strong>
-          </div>
-
-          <div className="stat-box">
-            <span className="text-muted">House Edge</span>
-            <strong>3%</strong>
           </div>
         </>
       }

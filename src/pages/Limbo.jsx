@@ -30,7 +30,7 @@ export function Limbo() {
   }, []);
 
   const target = Math.min(1000, Math.max(1.01, Number(targetText) || 2));
-  const winChance = Number((95 / target).toFixed(2));
+  const winChance = Number((88 / target).toFixed(2));
 
   const play = () => {
     if (running) return;
@@ -128,11 +128,6 @@ export function Limbo() {
           <div className="stat-box">
             <span className="text-muted">Target Payout</span>
             <strong className="text-green">{formatGems(Math.round(betAmount * target))}</strong>
-          </div>
-
-          <div className="stat-box">
-            <span className="text-muted">House Edge</span>
-            <strong>5%</strong>
           </div>
         </>
       }

@@ -10,7 +10,7 @@
       "tag": "STARTER",
       "desc": "Low-cost starter crate with a sneaky 0.5% Huge drop.",
       "houseEdge": 5,
-      "price": 462000,
+      "price": 499000,
       "items": [
         {
           "name": "Huge Stardust Vein Fox",
@@ -70,7 +70,7 @@
       "tag": "POPULAR",
       "desc": "Balanced mid-tier PS99 pets with 1.5% Huge odds.",
       "houseEdge": 5,
-      "price": 2090000,
+      "price": 2250000,
       "items": [
         {
           "name": "Huge Stingray",
@@ -130,7 +130,7 @@
       "tag": "HIGH RISK",
       "desc": "High-voltage 10% combined Huge odds for bold openers.",
       "houseEdge": 5,
-      "price": 4930000,
+      "price": 5320000,
       "items": [
         {
           "name": "Huge Clover Fairy",
@@ -183,7 +183,7 @@
       "tag": "TECH",
       "desc": "High-tech exclusives and a 6% shot at cyber Huges.",
       "houseEdge": 5,
-      "price": 6900000,
+      "price": 7450000,
       "items": [
         {
           "name": "Huge Raptor",
@@ -250,7 +250,7 @@
       "tag": "HOT",
       "desc": "30% Huge rate featuring molten high-value Huges.",
       "houseEdge": 5,
-      "price": 26000000,
+      "price": 28100000,
       "items": [
         {
           "name": "Huge Husky",
@@ -310,7 +310,7 @@
       "tag": "50/50",
       "desc": "Pure coinflip tension — 50% chance to pull a Huge.",
       "houseEdge": 5,
-      "price": 33500000,
+      "price": 36200000,
       "items": [
         {
           "name": "Huge Electric Cat",
@@ -356,7 +356,7 @@
       "tag": "100% HUGE",
       "desc": "Guaranteed Huge pet every spin plus a Titanic chase.",
       "houseEdge": 5,
-      "price": 73100000,
+      "price": 78900000,
       "items": [
         {
           "name": "Titanic Ooze Cat",
@@ -423,7 +423,7 @@
       "tag": "MYTHIC",
       "desc": "Rare cosmic Huges with 1.5% Titanic drop chance.",
       "houseEdge": 5,
-      "price": 227000000,
+      "price": 245000000,
       "items": [
         {
           "name": "Titanic Gym Cat",
@@ -483,7 +483,7 @@
       "tag": "WHALE",
       "desc": "High-roller vault stacked with Titanics & a Gargantuan.",
       "houseEdge": 5,
-      "price": 1190000000,
+      "price": 1280000000,
       "items": [
         {
           "name": "Gargantuan Guest 666",
@@ -550,7 +550,7 @@
       "tag": "GOD TIER",
       "desc": "Ultimate PS99 crate packed with Titanics & Gargantuans.",
       "houseEdge": 5,
-      "price": 4410000000,
+      "price": 4760000000,
       "items": [
         {
           "name": "Gargantuan Nyan Cat",

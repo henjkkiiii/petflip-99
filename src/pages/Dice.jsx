@@ -22,7 +22,7 @@ export function Dice() {
   const [rolling, setRolling] = useState(false);
 
   const winChance = mode === 'under' ? target : 100 - target;
-  const multiplier = Number((96 / winChance).toFixed(2));
+  const multiplier = Number((88 / winChance).toFixed(2));
   const potentialPayout = Math.round(betAmount * multiplier);
 
   const roll = () => {
@@ -93,11 +93,6 @@ export function Dice() {
           <div className="stat-box">
             <span className="text-muted">Payout on Win</span>
             <strong className="text-green">{formatGems(potentialPayout)}</strong>
-          </div>
-
-          <div className="stat-box">
-            <span className="text-muted">House Edge</span>
-            <strong>4%</strong>
           </div>
         </>
       }

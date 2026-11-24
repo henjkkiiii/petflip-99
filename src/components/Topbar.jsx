@@ -23,7 +23,6 @@ import { sound } from '../lib/sound.js';
 export function Topbar({
   onOpenDeposit,
   onOpenWithdraw,
-  onOpenFairness,
   onToggleChat,
   chatOpen,
 }) {
@@ -191,19 +190,6 @@ export function Topbar({
             </Link>
           </>
         )}
-
-        <button
-          type="button"
-          className="icon-btn hide-sm"
-          onClick={() => {
-            sound.click();
-            onOpenFairness?.();
-          }}
-          aria-label="Provably Fair & House Edge"
-          title="Provably Fair & House Edge"
-        >
-          <ShieldCheck size={18} />
-        </button>
 
         <button
           type="button"

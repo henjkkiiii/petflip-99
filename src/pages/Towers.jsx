@@ -22,7 +22,7 @@ const DIFFICULTIES = {
 function rowMultiplier(rowNum, diffKey) {
   const { cols, bombs } = DIFFICULTIES[diffKey];
   const p = (cols - bombs) / cols;
-  return Math.floor((0.96 / Math.pow(p, rowNum)) * 100) / 100;
+  return Math.floor((0.88 / Math.pow(p, rowNum)) * 100) / 100;
 }
 
 export function Towers() {
@@ -155,11 +155,6 @@ export function Towers() {
           <div className="stat-box">
             <span className="text-muted">Current Floor</span>
             <strong>{active ? `${currentRow} / ${ROWS}` : '—'}</strong>
-          </div>
-
-          <div className="stat-box">
-            <span className="text-muted">House Edge</span>
-            <strong>4%</strong>
           </div>
         </>
       }
