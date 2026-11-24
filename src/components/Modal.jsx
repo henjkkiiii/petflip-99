@@ -20,15 +20,16 @@ export function Modal({ open, onClose, title, children, maxWidth = 460 }) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          transition={{ duration: 0.14 }}
           onClick={onClose}
         >
           <motion.div
             className="modal-box card"
             style={{ maxWidth }}
-            initial={{ opacity: 0, scale: 0.9, y: 12 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.92, y: 8 }}
-            transition={{ type: 'spring', stiffness: 360, damping: 26 }}
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-header">

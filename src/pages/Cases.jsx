@@ -10,7 +10,6 @@ import { GemAmount } from '../components/GemAmount.jsx';
 export function Cases() {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('price-asc');
-  const [hoveredId, setHoveredId] = useState(null);
 
   const crateDiscountPct = useSiteConfig((s) => s.crateDiscountPct);
   const cratePriceOverrides = useSiteConfig((s) => s.cratePriceOverrides);
@@ -46,8 +45,8 @@ export function Cases() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative', minWidth: 220 }}>
+        <div className="cases-toolbar">
+          <div className="cases-search-wrap">
             <Search
               size={16}
               style={{
@@ -68,8 +67,7 @@ export function Cases() {
           </div>
 
           <select
-            className="input"
-            style={{ width: 'auto' }}
+            className="input cases-sort-select"
             value={sort}
             onChange={(e) => setSort(e.target.value)}
           >
@@ -82,60 +80,58 @@ export function Cases() {
 
       <div className="egg-grid">
         {filtered.map((crate) => {
-          const top3 = crate.items.slice(0, 3);
-          const isHover = hoveredId === crate.id;
+          const sortedItems = [...(crate.items || [])].sort(
+            (a, b) => (b.value || 0) - (a.value || 0)
+          );
+          const topItem = sortedItems[0];
+          const top3 = sortedItems.slice(0, 3);
+          const topTier = topItem?.tier || 'normal';
           const effPrice = getEffectiveCratePrice(crate, pricingCfg);
+          const maxMult = topItem
+            ? Math.max(1, Math.round(topItem.value / Math.max(1, effPrice)))
+            : 1;
           const hasSale = crateDiscountPct > 0;
+
           return (
             <Link
               key={crate.id}
               to={`/cases/${crate.id}`}
-              className="egg-card"
-              onMouseEnter={() => setHoveredId(crate.id)}
-              onMouseLeave={() => setHoveredId(null)}
+              className={`egg-card egg-card-tier-${topTier}`}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', gap: 6 }}>
-                <span className="tier-badge tier-badge-huge">{crate.tag}</span>
-                {hasSale && (
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  width: '100%',
+                  gap: 6,
+                }}
+              >
+                <span className={`tier-badge tier-badge-${topTier === 'normal' ? 'huge' : topTier}`}>
+                  {crate.tag}
+                </span>
+                {hasSale ? (
                   <span className="tier-badge tier-badge-titanic">-{crateDiscountPct}%</span>
+                ) : (
+                  <span className="egg-card-maxmult">Up to {maxMult.toLocaleString()}×</span>
                 )}
               </div>
 
               <img
                 src={crate.icon}
                 alt={crate.name}
-                style={{
-                  width: 112,
-                  height: 112,
-                  objectFit: 'contain',
-                  filter: 'drop-shadow(0 8px 16px rgba(0,0,0,0.45))',
-                }}
-                className="egg-wobble"
+                className="egg-card-icon egg-wobble"
               />
 
               <div className="egg-card-name" title={crate.name}>
                 {crate.name}
               </div>
 
-              {isHover ? (
-                <div className="egg-hover-top3" title="Top drops">
-                  {top3.map((it) => (
-                    <PetImage key={it.name} thumb={it.thumb} alt={it.name} size={28} />
-                  ))}
-                </div>
-              ) : (
-                <div
-                  className="text-muted"
-                  style={{
-                    fontSize: 11.5,
-                    textAlign: 'center',
-                    lineHeight: 1.3,
-                    minHeight: 30,
-                  }}
-                >
-                  {crate.desc}
-                </div>
-              )}
+              <div className="egg-card-top3" title="Top drops">
+                {top3.map((it) => (
+                  <PetImage key={it.name} thumb={it.thumb} alt={it.name} size={24} />
+                ))}
+              </div>
 
               <div className="text-gem" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {effPrice !== crate.price && crateDiscountPct > 0 && (

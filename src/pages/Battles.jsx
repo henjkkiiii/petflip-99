@@ -165,7 +165,7 @@ export function Battles() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div className="battle-header-actions">
           <button
             type="button"
             className="btn btn-outline"
@@ -241,19 +241,8 @@ export function Battles() {
                   : 'var(--text-muted)';
 
             return (
-              <div
-                key={room.id}
-                className="card"
-                style={{
-                  padding: '14px 18px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 16,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+              <div key={room.id} className="card battle-lobby-card">
+                <div className="battle-lobby-main">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span
                       className="game-tag"
@@ -269,13 +258,13 @@ export function Battles() {
                     </span>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {room.crates.slice(0, 6).map((crate, i) => (
                       <PetImage
                         key={i}
                         thumb={crate.icon}
                         alt={crate.name}
-                        size={38}
+                        size={36}
                         className="rounded-crate"
                       />
                     ))}
@@ -348,37 +337,39 @@ export function Battles() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <div style={{ textAlign: 'right', marginRight: 4 }}>
+                <div className="battle-lobby-actions">
+                  <div>
                     <div className="text-muted" style={{ fontSize: 11 }}>
                       Entry Cost
                     </div>
                     <GemAmount value={room.cost} iconSize={15} />
                   </div>
 
-                  {userIn ? (
-                    <Link to={`/battles/${room.id}`} className="btn btn-primary">
-                      Enter Room
-                    </Link>
-                  ) : room.status === 'waiting' && !isFull ? (
-                    <>
-                      <Link to={`/battles/${room.id}`} className="btn btn-outline">
-                        <Eye size={15} /> View
+                  <div className="battle-lobby-action-btns">
+                    {userIn ? (
+                      <Link to={`/battles/${room.id}`} className="btn btn-primary">
+                        Enter Room
                       </Link>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        disabled={joiningId === room.id}
-                        onClick={() => handleJoin(room)}
-                      >
-                        {joiningId === room.id ? 'Joining…' : `Join (${formatGems(room.cost)})`}
-                      </button>
-                    </>
-                  ) : (
-                    <Link to={`/battles/${room.id}`} className="btn btn-outline">
-                      {room.status === 'finished' ? 'Results' : 'Watch'}
-                    </Link>
-                  )}
+                    ) : room.status === 'waiting' && !isFull ? (
+                      <>
+                        <Link to={`/battles/${room.id}`} className="btn btn-outline">
+                          <Eye size={15} /> View
+                        </Link>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          disabled={joiningId === room.id}
+                          onClick={() => handleJoin(room)}
+                        >
+                          {joiningId === room.id ? 'Joining…' : `Join (${formatGems(room.cost)})`}
+                        </button>
+                      </>
+                    ) : (
+                      <Link to={`/battles/${room.id}`} className="btn btn-outline">
+                        {room.status === 'finished' ? 'Results' : 'Watch'}
+                      </Link>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -392,7 +383,7 @@ export function Battles() {
         title="Create Case Battle"
         maxWidth={660}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="field-label">
             <span>Battle Mode</span>
             <div className="seg-group">
@@ -423,7 +414,7 @@ export function Battles() {
                 background: 'var(--bg-deep)',
                 borderRadius: 12,
                 border: '1px solid var(--border)',
-                minHeight: 58,
+                minHeight: 54,
               }}
             >
               {selectedCrates.length === 0 ? (
@@ -464,16 +455,7 @@ export function Battles() {
             placeholder="Filter PS99 crates…"
           />
 
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(125px, 1fr))',
-              gap: 8,
-              maxHeight: 240,
-              overflowY: 'auto',
-              paddingRight: 4,
-            }}
-          >
+          <div className="battle-crate-picker-grid">
             {filteredCrates.map((crate) => (
               <button
                 key={crate.id}
@@ -490,7 +472,7 @@ export function Battles() {
                   gap: 4,
                 }}
               >
-                <PetImage thumb={crate.icon} alt={crate.name} size={48} />
+                <PetImage thumb={crate.icon} alt={crate.name} size={46} />
                 <div
                   style={{
                     fontSize: 11.5,

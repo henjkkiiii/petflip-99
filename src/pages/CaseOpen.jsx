@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, PackageOpen, Zap } from 'lucide-react';
+import { ArrowLeft, PackageOpen, Sparkles, Trophy, Zap } from 'lucide-react';
 import ps99 from '../data/ps99.json';
 import { weightedPick } from '../lib/rng.js';
 import { formatGems } from '../lib/format.js';
@@ -12,6 +12,7 @@ import { useToast } from '../store/toast.js';
 import { useDrops } from '../store/drops.js';
 import { CaseReel } from '../components/CaseReel.jsx';
 import { PetCard } from '../components/PetCard.jsx';
+import { PetImage } from '../components/PetImage.jsx';
 import { GemAmount } from '../components/GemAmount.jsx';
 import { Modal } from '../components/Modal.jsx';
 import { LiveBets } from '../components/LiveBets.jsx';
@@ -21,6 +22,10 @@ export function CaseOpen() {
   const crate = useMemo(
     () => ps99.crates.find((c) => c.id === id) || ps99.crates[0],
     [id]
+  );
+  const topDrop = useMemo(
+    () => [...(crate.items || [])].sort((a, b) => (b.value || 0) - (a.value || 0))[0] || null,
+    [crate]
   );
 
   const placeBet = useGame((s) => s.placeBet);
@@ -36,6 +41,8 @@ export function CaseOpen() {
   const [spinNonce, setSpinNonce] = useState(0);
   const [resultModalOpen, setResultModalOpen] = useState(false);
   const [wonStamped, setWonStamped] = useState([]);
+  const [lastSpent, setLastSpent] = useState(0);
+  const [recentPulls, setRecentPulls] = useState([]);
 
   const doneCountRef = useRef(0);
   const activeRunRef = useRef(null);
@@ -94,6 +101,8 @@ export function CaseOpen() {
 
     addItems(stamped);
     setWonStamped(stamped);
+    setLastSpent(run.totalCost);
+    setRecentPulls((prev) => [...stamped, ...prev].slice(0, 6));
 
     const pushDrop = useDrops.getState().pushDrop;
     const uname = useGame.getState().username;
@@ -134,10 +143,12 @@ export function CaseOpen() {
     if (modalTimerRef.current) clearTimeout(modalTimerRef.current);
     modalTimerRef.current = setTimeout(() => {
       setResultModalOpen(true);
-    }, fast ? 350 : 750);
+    }, fast ? 240 : 480);
   };
 
   const wonTotal = wonStamped.reduce((s, p) => s + p.value, 0);
+  const netProfit = wonTotal - lastSpent;
+  const resultMult = lastSpent > 0 ? (wonTotal / lastSpent).toFixed(2) : '0.00';
 
   const handleSellWon = () => {
     const uids = wonStamped.map((p) => p.uid);
@@ -157,37 +168,32 @@ export function CaseOpen() {
         </Link>
       </div>
 
-      <div className="card" style={{ padding: 20, marginBottom: 20 }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 16,
-            marginBottom: 18,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div className={`card case-open-card case-open-tier-${topDrop?.tier || 'normal'}`}>
+        <div className="case-open-head">
+          <div className="case-open-info">
             <img
               src={crate.icon}
               alt={crate.name}
-              style={{
-                width: 76,
-                height: 76,
-                objectFit: 'contain',
-                filter: 'drop-shadow(0 8px 16px rgba(0,0,0,0.45))',
-              }}
-              className={spinning ? 'egg-wobble crate-spinning-aura' : ''}
+              className={`case-open-icon ${spinning ? 'egg-wobble crate-spinning-aura' : ''}`}
             />
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <h1 className="page-title" style={{ fontSize: 24 }}>
                   {crate.name}
                 </h1>
                 <span className="tier-badge tier-badge-huge">{crate.tag}</span>
               </div>
-              <div className="text-gem" style={{ fontSize: 16, marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div
+                className="text-gem"
+                style={{
+                  fontSize: 16,
+                  marginTop: 2,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  flexWrap: 'wrap',
+                }}
+              >
                 <GemAmount value={effectivePrice} iconSize={16} /> per crate
                 {crateDiscountPct > 0 && (
                   <span className="tier-badge tier-badge-titanic">-{crateDiscountPct}% SALE</span>
@@ -199,7 +205,7 @@ export function CaseOpen() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div className="case-open-controls">
             <div className="seg-group">
               {[1, 2, 3, 4].map((c) => (
                 <button
@@ -232,7 +238,7 @@ export function CaseOpen() {
             <button
               type="button"
               disabled={spinning}
-              className="btn btn-lg btn-green"
+              className="btn btn-lg btn-green case-open-cta"
               onClick={openCrate}
             >
               <PackageOpen size={18} />
@@ -240,6 +246,16 @@ export function CaseOpen() {
             </button>
           </div>
         </div>
+
+        {topDrop && (
+          <div className="case-chase-pill">
+            <Trophy size={14} className="text-gold" />
+            <span className="text-muted">Top Drop:</span>
+            <PetImage thumb={topDrop.thumb} alt={topDrop.name} size={22} />
+            <strong>{topDrop.name}</strong>
+            <GemAmount value={topDrop.value} iconSize={13} className="text-gold" />
+          </div>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {Array.from({ length: count }, (_, idx) => (
@@ -254,20 +270,42 @@ export function CaseOpen() {
             />
           ))}
         </div>
+
+        {recentPulls.length > 0 && (
+          <div className="case-recent-strip">
+            <span
+              className="text-muted"
+              style={{ fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+            >
+              <Sparkles size={12} className="text-gem" /> Recent:
+            </span>
+            {recentPulls.map((pet) => (
+              <div
+                key={pet.uid}
+                className={`tier-badge tier-badge-${pet.tier || 'normal'}`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 8px',
+                  whiteSpace: 'nowrap',
+                  textTransform: 'none',
+                }}
+              >
+                <PetImage thumb={pet.thumb} alt={pet.name} size={18} />
+                <span>{pet.name}</span>
+                <strong>{formatGems(pet.value)}</strong>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="section-head">
         <h2>Crate Contents</h2>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))',
-          gap: 12,
-          marginBottom: 24,
-        }}
-      >
+      <div className="case-contents-grid">
         {crate.items.map((item) => (
           <PetCard key={item.name} pet={item} showChance />
         ))}
@@ -281,20 +319,29 @@ export function CaseOpen() {
         title={`Unboxed from ${crate.name}!`}
         maxWidth={560}
       >
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-            gap: 10,
-            marginBottom: 16,
-          }}
-        >
+        <div className={`case-result-banner ${netProfit >= 0 ? 'is-profit' : 'is-loss'}`}>
+          <div>
+            <span className="text-muted">Total Value: </span>
+            <strong className="text-gem">{formatGems(wonTotal)}</strong>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className={netProfit >= 0 ? 'text-green' : 'text-red'} style={{ fontWeight: 700 }}>
+              {netProfit >= 0 ? '+' : '-'}
+              {formatGems(Math.abs(netProfit))}
+            </span>
+            <span className={`mult-pill ${Number(resultMult) >= 1 ? 'mult-green' : 'mult-red'}`}>
+              {resultMult}×
+            </span>
+          </div>
+        </div>
+
+        <div className="case-result-grid">
           {wonStamped.map((pet) => (
             <PetCard key={pet.uid} pet={pet} compact />
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div className="case-result-actions">
           <button
             type="button"
             className="btn btn-lg btn-green"

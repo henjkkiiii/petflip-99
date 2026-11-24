@@ -6,9 +6,8 @@ import { GemAmount } from './GemAmount.jsx';
 
 const TILE_WIDTH = 136;
 const TILE_GAP = 10;
-const STEP = TILE_WIDTH + TILE_GAP;
-const TOTAL_TILES = 64;
-const WINNER_INDEX = 54;
+const TOTAL_TILES = 44;
+const WINNER_INDEX = 36;
 
 const TIER_GLOW = {
   normal: 'rgba(56, 217, 255, 0.35)',
@@ -46,20 +45,18 @@ export function CaseReel({
   const wrapRef = useRef(null);
   const viewportRef = useRef(null);
   const trackRef = useRef(null);
-  const markerRef = useRef(null);
   const [settled, setSettled] = useState(false);
-  const [activeIdx, setActiveIdx] = useState(-1);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
 
-  // Build 64-item strip whenever a new winner is locked in for a spin
+  // Build 44-item strip whenever a new winner is locked in for a spin
   const strip = useMemo(() => {
     if (!items || items.length === 0) return [];
     const rares = items.filter((it) =>
       ['huge', 'titanic', 'gargantuan'].includes(it.tier)
     );
     const addNearMiss =
-      winner?.tier === 'normal' && rares.length > 0 && rand() < 0.4;
+      winner?.tier === 'normal' && rares.length > 0 && rand() < 0.58;
     const nearMissSide = rand() < 0.5 ? WINNER_INDEX - 1 : WINNER_INDEX + 1;
 
     const arr = [];
@@ -81,7 +78,6 @@ export function CaseReel({
     }
 
     setSettled(false);
-    setActiveIdx(-1);
 
     const trackEl = trackRef.current;
     const wrapEl = wrapRef.current;
@@ -89,7 +85,6 @@ export function CaseReel({
     if (!trackEl || !vpEl) return;
 
     trackEl.style.transition = 'none';
-    trackEl.style.filter = 'none';
     trackEl.style.transform = 'translate3d(0px, 0, 0)';
 
     const durationMs = fast ? 1400 : 5800;
@@ -97,18 +92,23 @@ export function CaseReel({
     let freezeTimer = null;
     let snapTimer = null;
     let startRaf = null;
-    let tickResetTimer = null;
+    let activeTileEl = null;
+    let lastTier = '';
 
     startRaf = requestAnimationFrame(() => {
+      const firstTile = trackEl.children[0];
+      const tileW = firstTile ? firstTile.getBoundingClientRect().width : TILE_WIDTH;
+      const trackStyle = window.getComputedStyle(trackEl);
+      const gapPx = parseFloat(trackStyle.columnGap || trackStyle.gap) || TILE_GAP;
+      const stepPx = Math.max(1, tileW + gapPx);
       const vpWidth = vpEl.clientWidth || 720;
-      const centerOffset = vpWidth / 2 - TILE_WIDTH / 2;
-      const centerX = -(WINNER_INDEX * STEP - centerOffset);
-      const jitter = (rand() - 0.5) * (TILE_WIDTH * 0.82);
+      const centerOffset = vpWidth / 2 - tileW / 2;
+      const centerX = -(WINNER_INDEX * stepPx - centerOffset);
+      const jitter = (rand() - 0.5) * (tileW * 0.82);
       const landX = centerX + jitter;
 
       let startTime = null;
       let lastTickIdx = -1;
-      let prevX = 0;
 
       const frame = (now) => {
         if (startTime === null) startTime = now;
@@ -116,18 +116,16 @@ export function CaseReel({
         const rawT = Math.min(1, Math.max(0, elapsed / durationMs));
         const progress = easeSuspense(rawT);
         const x = landX * progress;
-        const dx = Math.abs(x - prevX);
-        prevX = x;
 
         trackEl.style.transform = `translate3d(${x.toFixed(2)}px, 0, 0)`;
-        const blurPx = Math.min(1.6, dx * 0.028);
-        trackEl.style.filter = blurPx > 0.15 ? `blur(${blurPx.toFixed(2)}px)` : 'none';
 
         const markerInTrack = vpWidth / 2 - x;
-        const idx = Math.floor(markerInTrack / STEP);
+        const idx = Math.floor(markerInTrack / stepPx);
         if (idx !== lastTickIdx && idx >= 0 && idx < TOTAL_TILES) {
           lastTickIdx = idx;
-          setActiveIdx(idx);
+          activeTileEl?.classList.remove('reel-tile-active');
+          activeTileEl = trackEl.children[idx] || null;
+          activeTileEl?.classList.add('reel-tile-active');
 
           // Pitch-ramped tick sound + tease ping on late rares
           sound.tick(1.18 - rawT * 0.3);
@@ -140,13 +138,9 @@ export function CaseReel({
             sound.tease();
           }
 
-          if (wrapEl) {
+          if (wrapEl && passingTier !== lastTier) {
+            lastTier = passingTier;
             wrapEl.style.setProperty('--reel-glow', TIER_GLOW[passingTier] || TIER_GLOW.normal);
-          }
-          if (markerRef.current) {
-            markerRef.current.classList.remove('marker-tick');
-            void markerRef.current.offsetWidth;
-            markerRef.current.classList.add('marker-tick');
           }
         }
 
@@ -154,7 +148,6 @@ export function CaseReel({
           rafId = requestAnimationFrame(frame);
         } else {
           trackEl.style.transform = `translate3d(${landX.toFixed(2)}px, 0, 0)`;
-          trackEl.style.filter = 'none';
 
           // Nail-biting freeze on edge before elastic snap to dead center
           freezeTimer = setTimeout(() => {
@@ -165,11 +158,12 @@ export function CaseReel({
             trackRef.current.style.transform = `translate3d(${centerX.toFixed(2)}px, 0, 0)`;
 
             snapTimer = setTimeout(() => {
+              activeTileEl?.classList.remove('reel-tile-active');
+              activeTileEl = null;
               const winTier = winner?.tier || 'normal';
               if (wrapEl) {
                 wrapEl.style.setProperty('--reel-glow', TIER_GLOW[winTier] || TIER_GLOW.normal);
               }
-              setActiveIdx(WINNER_INDEX);
               setSettled(true);
               sound.reveal();
               onDoneRef.current?.(winner);
@@ -186,7 +180,7 @@ export function CaseReel({
       if (rafId) cancelAnimationFrame(rafId);
       if (freezeTimer) clearTimeout(freezeTimer);
       if (snapTimer) clearTimeout(snapTimer);
-      if (tickResetTimer) clearTimeout(tickResetTimer);
+      activeTileEl?.classList.remove('reel-tile-active');
     };
   }, [spinning, winner, fast, strip]);
 
@@ -196,11 +190,17 @@ export function CaseReel({
     <div
       ref={wrapRef}
       className={`case-reel-wrap ${compact ? 'compact' : ''} ${
-        settled ? 'reel-settled' : ''
+        settled ? `reel-settled reel-hit-${winTier}` : ''
       }`}
     >
       <div className="case-reel-accent-top" />
       <div className="case-reel-accent-bot" />
+
+      {!compact && settled && winner?.name && (
+        <div className={`reel-win-pill tier-badge tier-badge-${winTier}`}>
+          {winner.name}
+        </div>
+      )}
 
       {settled && (
         <div
@@ -212,14 +212,13 @@ export function CaseReel({
         </div>
       )}
 
-      <div ref={markerRef} className="case-reel-marker" />
+      <div className="case-reel-marker" />
 
       <div className="case-reel-viewport" ref={viewportRef}>
         <div ref={trackRef} className="case-reel-track">
           {strip.map((pet, idx) => {
             const isWinTile = settled && idx === WINNER_INDEX;
             const isDimmed = settled && idx !== WINNER_INDEX;
-            const isActive = !settled && spinning && idx === activeIdx;
             const tier = pet?.tier || 'normal';
             const isRare = ['huge', 'titanic', 'gargantuan'].includes(tier);
 
@@ -228,12 +227,10 @@ export function CaseReel({
                 key={idx}
                 className={`tier-frame tier-${tier} reel-tile reel-tier-${tier} ${
                   isWinTile ? 'reel-tile-winner' : ''
-                } ${isDimmed ? 'reel-tile-dimmed' : ''} ${
-                  isActive ? 'reel-tile-active' : ''
-                }`}
+                } ${isDimmed ? 'reel-tile-dimmed' : ''}`}
               >
                 <div className="reel-tile-inner">
-                  {isRare && <span className="reel-shine" />}
+                  {isWinTile && isRare && <span className="reel-shine" />}
                   <div className="reel-spot" />
                   <PetImage
                     thumb={pet.thumb}

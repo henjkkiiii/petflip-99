@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Bot, Crown, LogOut, Swords, UserPlus, Zap } from 'lucide-react';
+import { ArrowLeft, Bot, Crown, LogOut, Swords, Trophy, UserPlus } from 'lucide-react';
 import { useBattles } from '../store/battles.js';
 import { useAuth } from '../store/useAuth.js';
 import { useToast } from '../store/toast.js';
@@ -27,7 +27,6 @@ export function BattleRoom() {
   const openAuthModal = useAuth((s) => s.openAuthModal);
   const pushToast = useToast((s) => s.push);
 
-  const [fast, setFast] = useState(false);
   const [revealedRounds, setRevealedRounds] = useState(0);
   const [playbackRound, setPlaybackRound] = useState(0);
   const [isSpinning, setIsSpinning] = useState(false);
@@ -228,20 +227,36 @@ export function BattleRoom() {
   const emptySeatsCount = room.players.filter((p) => p === null).length;
 
   const activeCrate = room.crates[playbackRound] || room.crates[room.crates.length - 1];
-  const shownPot = room.players.reduce((sum, p) => {
-    if (!p) return sum;
+  const seatShownTotals = room.players.map((p) => {
+    if (!p || room.status === 'waiting') return 0;
     const pulls = (p.pulls || []).slice(0, revealedRounds);
-    return sum + pulls.reduce((s, it) => s + (Number(it.value) || 0), 0);
-  }, 0);
+    return pulls.reduce((s, it) => s + (Number(it.value) || 0), 0);
+  });
+  const shownPot = seatShownTotals.reduce((a, b) => a + b, 0);
+
+  let leadingSeatIdx = null;
+  if (revealedRounds > 0 && !playbackDone) {
+    const maxVal = Math.max(...seatShownTotals);
+    if (maxVal > 0) {
+      const leaders = seatShownTotals.reduce(
+        (acc, val, idx) => (val === maxVal ? [...acc, idx] : acc),
+        []
+      );
+      if (leaders.length === 1) leadingSeatIdx = leaders[0];
+    }
+  }
+
+  const winnerPlayer =
+    playbackDone && room.winnerSeat !== null ? room.players[room.winnerSeat] || null : null;
 
   return (
     <div>
-      <div className="page-header" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div className="battle-room-header">
+        <div className="battle-room-title-row">
           <Link to="/battles" className="btn btn-sm btn-ghost">
             <ArrowLeft size={15} /> Lobby
           </Link>
-          <h1 className="page-title" style={{ fontSize: 24 }}>
+          <h1 className="page-title" style={{ fontSize: 22 }}>
             <Swords size={22} className="text-gold" />
             <span>{room.mode} Battle</span>
           </h1>
@@ -252,7 +267,7 @@ export function BattleRoom() {
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div className="battle-room-controls">
           {room.status === 'waiting' && canCallBots && emptySeatsCount > 0 && (
             <button
               type="button"
@@ -283,13 +298,6 @@ export function BattleRoom() {
                   : 'Leave & Refund'}
             </button>
           )}
-          <button
-            type="button"
-            className={`btn btn-sm ${fast ? 'btn-gold' : 'btn-outline'}`}
-            onClick={() => setFast((f) => !f)}
-          >
-            <Zap size={14} /> Fast
-          </button>
           <div className="balance-pill" style={{ fontSize: 13.5 }}>
             Pot: <GemAmount value={shownPot} iconSize={15} />
           </div>
@@ -297,17 +305,7 @@ export function BattleRoom() {
       </div>
 
       {/* Round Crates Strip */}
-      <div
-        className="card"
-        style={{
-          padding: '10px 14px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          overflowX: 'auto',
-          marginBottom: 16,
-        }}
-      >
+      <div className="card battle-rounds-strip">
         {room.crates.map((crate, idx) => {
           const isCurr = room.status !== 'waiting' && !playbackDone && idx === playbackRound;
           const isPast = playbackDone || idx < revealedRounds;
@@ -326,60 +324,76 @@ export function BattleRoom() {
                 whiteSpace: 'nowrap',
               }}
             >
-              <PetImage thumb={crate.icon} alt={crate.name} size={28} lazy={false} />
+              <PetImage thumb={crate.icon} alt={crate.name} size={26} lazy={false} />
               <span style={{ fontSize: 12, fontWeight: 700 }}>#{idx + 1}</span>
             </div>
           );
         })}
       </div>
 
+      {playbackDone && winnerPlayer && (
+        <div className="battle-victory-banner">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Trophy size={20} className="text-gold" />
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 15 }}>
+                {winnerPlayer.name} won the battle!
+              </div>
+              <div className="text-muted" style={{ fontSize: 12 }}>
+                Claimed the full pot of {room.players.reduce((s, p) => s + (p?.pulls?.length || 0), 0)} pets
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <GemAmount value={shownPot} iconSize={16} className="text-gold" />
+            <Link to="/battles" className="btn btn-sm btn-primary">
+              Back to Lobby
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Player Columns */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${room.seatsCount}, minmax(220px, 1fr))`,
-          gap: 14,
-          overflowX: 'auto',
-        }}
-      >
+      <div className="battle-seats-grid" data-seats={room.seatsCount}>
         {room.players.map((player, seatIdx) => {
-          const isMe = Boolean(player && !player.isBot && currentUserKey && player.userKey === currentUserKey);
+          const isMe = Boolean(
+            player && !player.isBot && currentUserKey && player.userKey === currentUserKey
+          );
           const isWinner = playbackDone && room.winnerSeat === seatIdx;
+          const isLeading = leadingSeatIdx === seatIdx;
           const visiblePulls =
             room.status === 'waiting' ? [] : (player?.pulls || []).slice(0, revealedRounds);
-          const shownTotal = visiblePulls.reduce((s, it) => s + (Number(it.value) || 0), 0);
+          const shownTotal = seatShownTotals[seatIdx] || 0;
           const seatWinnerItem =
             activeRoundWinners?.[seatIdx] || activeCrate?.items?.[activeCrate.items.length - 1];
 
           return (
             <div
               key={seatIdx}
-              className="card"
+              className="card battle-seat-card"
               style={{
-                padding: 14,
                 borderColor: isWinner
                   ? 'var(--gold)'
                   : isMe
                     ? 'rgba(62,224,255,0.45)'
                     : 'var(--border)',
-                boxShadow: isWinner ? '0 0 28px rgba(255,204,51,0.35)' : undefined,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 12,
+                boxShadow: isWinner ? '0 0 28px rgba(255,204,51,0.3)' : undefined,
               }}
             >
               {player ? (
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
+                  initial={{ opacity: 0, scale: 0.94 }}
                   animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.16 }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     gap: 8,
+                    flexWrap: 'wrap',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                     <div
                       style={{
                         width: 34,
@@ -391,13 +405,32 @@ export function BattleRoom() {
                         display: 'grid',
                         placeItems: 'center',
                         fontWeight: 700,
+                        flexShrink: 0,
                       }}
                     >
                       {player.name[0]?.toUpperCase()}
                     </div>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                        <span>{player.name}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: 14,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <span
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: 140,
+                          }}
+                        >
+                          {player.name}
+                        </span>
                         {isMe && <span className="you-tag">YOU</span>}
                         {player.isBot && (
                           <span
@@ -413,7 +446,7 @@ export function BattleRoom() {
                       </div>
                     </div>
                   </div>
-                  {isWinner && (
+                  {isWinner ? (
                     <span
                       style={{
                         display: 'inline-flex',
@@ -426,37 +459,17 @@ export function BattleRoom() {
                     >
                       <Crown size={16} /> WINNER
                     </span>
+                  ) : (
+                    isLeading && <span className="battle-leading-pill">LEADING</span>
                   )}
                 </motion.div>
               ) : (
-                <div
-                  style={{
-                    minHeight: 112,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                    padding: 12,
-                    borderRadius: 12,
-                    background: 'var(--bg-deep)',
-                    border: '1px dashed var(--border-light)',
-                    textAlign: 'center',
-                  }}
-                >
+                <div className="battle-seat-open">
                   <div style={{ fontWeight: 700, fontSize: 13 }}>Open Seat #{seatIdx + 1}</div>
                   <div className="text-muted" style={{ fontSize: 12 }}>
                     Waiting for real player…
                   </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      gap: 8,
-                      flexWrap: 'wrap',
-                      justifyContent: 'center',
-                      marginTop: 2,
-                    }}
-                  >
+                  <div className="battle-seat-open-btns">
                     {mySeatIdx === -1 && room.status === 'waiting' && (
                       <button
                         type="button"
@@ -494,19 +507,13 @@ export function BattleRoom() {
                     items={activeCrate.items}
                     winner={seatWinnerItem}
                     spinning={isSpinning}
-                    fast={fast}
+                    fast={false}
                     compact
                     onDone={handleSeatReelDone}
                   />
                 )}
 
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
-                  gap: 8,
-                }}
-              >
+              <div className="battle-pulls-grid">
                 {visiblePulls.map((pet, pIdx) => (
                   <PetCard key={pIdx} pet={pet} compact />
                 ))}
