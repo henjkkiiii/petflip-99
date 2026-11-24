@@ -146,10 +146,13 @@ if ($Action -eq "ocr-rect") {
   $g.CopyFromScreen($left, $top, 0, 0, $bmp.Size)
   $g.Dispose()
 
-  $scaled = New-Object System.Drawing.Bitmap(($width * 2), ($height * 2))
+  $pad = 24
+  $scale = 3
+  $scaled = New-Object System.Drawing.Bitmap(($width * $scale + $pad * 2), ($height * $scale + $pad * 2))
   $gs = [System.Drawing.Graphics]::FromImage($scaled)
+  $gs.Clear([System.Drawing.Color]::White)
   $gs.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-  $gs.DrawImage($bmp, 0, 0, ($width * 2), ($height * 2))
+  $gs.DrawImage($bmp, $pad, $pad, ($width * $scale), ($height * $scale))
   $gs.Dispose()
   $bmp.Dispose()
 

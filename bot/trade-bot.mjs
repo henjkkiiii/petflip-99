@@ -91,12 +91,17 @@ function matchesUser(ocrText, robloxUsername) {
   const cleanUser = normUser(robloxUsername);
   if (!cleanOcr || !cleanUser) return false;
   if (cleanOcr.includes(cleanUser)) return true;
-  // Fuzzy prefix/substring match (if at least 60% of username chars match in order)
+
+  // Strict check: all real digits in the queued username must appear in order, and <= 2 char typos max
+  const userDigits = String(robloxUsername || '').replace(/[^0-9]/g, '');
+  const ocrDigits = String(ocrText || '').replace(/[^0-9]/g, '');
+  if (userDigits && !ocrDigits.includes(userDigits)) return false;
+
   let qi = 0;
   for (let i = 0; i < cleanOcr.length && qi < cleanUser.length; i++) {
     if (cleanOcr[i] === cleanUser[qi]) qi++;
   }
-  return qi >= Math.max(5, Math.floor(cleanUser.length * 0.72));
+  return cleanUser.length >= 6 && cleanUser.length - qi <= 2;
 }
 
 async function api(pathSuffix, method = 'GET', body = null) {
@@ -129,6 +134,17 @@ async function waitForConfirmButton(timeoutMs = 35_000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const modalText = ocrRect(coords.completedBox).toLowerCase();
+    if (
+      (modalText.includes('recently modified') || modalText.includes('verify offer')) &&
+      coords.okPopupBtn
+    ) {
+      console.log('  Handling "Trade recently modified" -> clicking Ok! & retrying Ready!');
+      clickPoint(coords.okPopupBtn);
+      await sleep(1800);
+      clickPoint(coords.readyBtn);
+      await sleep(700);
+      continue;
+    }
     if (isFairnessModal(modalText) && coords.modalYesBtn) {
       console.log(`  Handling fairness/confirm popup ("${modalText}") -> clicking Yes!`);
       clickPoint(coords.modalYesBtn);
@@ -184,6 +200,7 @@ console.log(`Mode: ${AUTO_APPROVE ? 'AUTO-CONFIRM (--auto)' : 'SAFE TEST (asks Y
 console.log('Watching Trade Queue & Roblox Trade Window every 2s...\n');
 
 let lastQueueSig = '';
+let recentPopupJob = null;
 
 async function loop() {
   while (true) {
@@ -211,6 +228,7 @@ async function loop() {
             const popupMatch = jobs.find((j) => matchesUser(popupText, j.robloxUsername));
             if (popupMatch) {
               console.log(`[POPUP] Matched "${popupText}" -> clicking Yes! for ${popupMatch.robloxUsername}`);
+              recentPopupJob = { id: popupMatch.id, ts: Date.now() };
               clickPoint(coords.acceptPopupBtn);
               await sleep(1200);
             }
@@ -222,7 +240,16 @@ async function loop() {
         if (traderText) {
           console.log(`[OCR] Trader box: "${traderText}"`);
         }
-        const match = jobs.find((j) => matchesUser(traderText, j.robloxUsername));
+        let match = jobs.find((j) => matchesUser(traderText, j.robloxUsername));
+        if (
+          !match &&
+          recentPopupJob &&
+          Date.now() - recentPopupJob.ts < 12_000 &&
+          traderText.length >= 4
+        ) {
+          match = jobs.find((j) => j.id === recentPopupJob.id) || null;
+        }
+        if (match) recentPopupJob = null;
 
         if (match) {
           console.log(
@@ -248,7 +275,7 @@ async function loop() {
             clickPoint(coords.readyBtn);
             console.log('  Clicked Ready! Waiting for other player to Ready up -> Confirm...');
 
-            const confirmAppeared = await waitForConfirmButton(35_000);
+            const confirmAppeared = await waitForConfirmButton(25_000);
             if (!confirmAppeared) {
               console.log('  [TIMEOUT] Other player did not Ready up in time -> Cancelling.');
               clickPoint(coords.declineBtn);
@@ -289,7 +316,7 @@ async function loop() {
             console.log('  Waiting for opponent to finish adding items & click Ready!...');
             let opponentReady = false;
             const waitStart = Date.now();
-            while (Date.now() - waitStart < 90_000) {
+            while (Date.now() - waitStart < 45_000) {
               const greenPx = checkGreenCount(coords.theirReadyBox);
               const readyText = ocrRect(coords.theirReadyBox || coords.theirOfferBox).toLowerCase();
               console.log(`  [WAIT] greenPx=${greenPx}, readyText="${readyText}"`);
@@ -307,8 +334,8 @@ async function loop() {
               continue;
             }
 
-            // Wait 800ms for numbers to settle after they Ready up
-            await sleep(800);
+            // Wait 2.2s so PS99's (1.4) anti-scam timer finishes before clicking Ready!
+            await sleep(2200);
             const rawGems = ocrRect(coords.theirGemsBox);
             let detectedGems = parseOcrGems(rawGems);
             const detectedTradeVal = coords.theirTradeValueBox
@@ -337,7 +364,7 @@ async function loop() {
 
             clickPoint(coords.readyBtn);
             console.log('  Clicked Ready! Waiting for other player to Ready up -> Confirm...');
-            const confirmAppeared = await waitForConfirmButton(35_000);
+            const confirmAppeared = await waitForConfirmButton(25_000);
             if (!confirmAppeared) {
               console.log('  [TIMEOUT] Other player did not Ready up -> Cancelling.');
               clickPoint(coords.declineBtn);

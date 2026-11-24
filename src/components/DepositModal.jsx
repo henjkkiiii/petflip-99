@@ -62,6 +62,8 @@ export function DepositModal({ open, onClose }) {
   const [phase, setPhase] = useState('idle');
   const [stepIdx, setStepIdx] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [trackedTradeId, setTrackedTradeId] = useState(null);
+  const [completedTrade, setCompletedTrade] = useState(null);
 
   const petCatalog = useMemo(() => buildDepositablePets(), []);
   const filteredPets = useMemo(() => {
@@ -77,10 +79,26 @@ export function DepositModal({ open, onClose }) {
   );
 
   useEffect(() => {
+    if (activeDeposit?.id) {
+      setTrackedTradeId(activeDeposit.id);
+      setCompletedTrade(null);
+    } else if (trackedTradeId) {
+      const finished = myTrades.find((t) => t.id === trackedTradeId && t.status === 'completed');
+      if (finished) {
+        setCompletedTrade(finished);
+        setTrackedTradeId(null);
+        fireConfetti(false);
+        sound.win();
+      }
+    }
+  }, [activeDeposit?.id, trackedTradeId, myTrades]);
+
+  useEffect(() => {
     if (open) {
       setRobloxUser((prev) => prev || account?.username || '');
       setPhase('idle');
       setStepIdx(0);
+      if (!activeDeposit) setCompletedTrade(null);
     }
   }, [open, account?.username]);
 
@@ -229,7 +247,42 @@ export function DepositModal({ open, onClose }) {
           </div>
 
           {mode === 'trade' ? (
-            activeDeposit ? (
+            completedTrade ? (
+              <div className="modal-progress">
+                <CheckCircle2 size={42} className="text-green" />
+                <div style={{ fontWeight: 800, fontSize: 18 }}>Deposit Successful!</div>
+                <div className="text-muted" style={{ fontSize: 13.5, textAlign: 'center' }}>
+                  {(completedTrade.actualGems || 0) > 0 && (
+                    <div>
+                      Credited{' '}
+                      <strong className="text-gem">
+                        +{formatGems(completedTrade.actualGems)} Gems
+                      </strong>{' '}
+                      to your wallet
+                    </div>
+                  )}
+                  {(completedTrade.actualPetsCount || 0) > 0 && (
+                    <div>
+                      Added{' '}
+                      <strong className="text-gold">
+                        +{completedTrade.actualPetsCount} Pet(s)
+                      </strong>{' '}
+                      to your Inventory
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setCompletedTrade(null);
+                    onClose?.();
+                  }}
+                >
+                  Back to Games
+                </button>
+              </div>
+            ) : activeDeposit ? (
               <div className="modal-progress">
                 <Loader2 size={32} className="spin text-gem" />
                 <div style={{ fontWeight: 700, fontSize: 15 }}>

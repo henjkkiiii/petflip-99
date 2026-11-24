@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, ExternalLink, Loader2, Swords, X } from 'lucide-react';
+import { Check, CheckCircle2, ExternalLink, Loader2, Swords, X } from 'lucide-react';
 import { Modal } from './Modal.jsx';
 import { GemIcon } from './GemIcon.jsx';
 import { PetImage } from './PetImage.jsx';
@@ -9,6 +9,7 @@ import { useSiteConfig } from '../store/siteConfig.js';
 import { useTrades } from '../store/trades.js';
 import { useToast } from '../store/toast.js';
 import { formatGems, parseGems } from '../lib/format.js';
+import { fireConfetti } from '../lib/confetti.js';
 import { sound } from '../lib/sound.js';
 
 export function WithdrawModal({ open, onClose }) {
@@ -28,16 +29,34 @@ export function WithdrawModal({ open, onClose }) {
   const [petFilter, setPetFilter] = useState('');
   const [selectedUids, setSelectedUids] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [trackedTradeId, setTrackedTradeId] = useState(null);
+  const [completedTrade, setCompletedTrade] = useState(null);
 
   const activeWithdraw = myTrades.find(
     (t) => t.type === 'withdraw' && (t.status === 'waiting' || t.status === 'processing')
   );
 
   useEffect(() => {
+    if (activeWithdraw?.id) {
+      setTrackedTradeId(activeWithdraw.id);
+      setCompletedTrade(null);
+    } else if (trackedTradeId) {
+      const finished = myTrades.find((t) => t.id === trackedTradeId && t.status === 'completed');
+      if (finished) {
+        setCompletedTrade(finished);
+        setTrackedTradeId(null);
+        fireConfetti(false);
+        sound.cashout();
+      }
+    }
+  }, [activeWithdraw?.id, trackedTradeId, myTrades]);
+
+  useEffect(() => {
     if (open) {
       setRobloxUser((prev) => (prev && prev !== 'Guest' ? prev : username));
       setAmountText(balance >= 10_000_000 ? '10M' : '0');
       setSelectedUids([]);
+      if (!activeWithdraw) setCompletedTrade(null);
     }
   }, [open, username, balance]);
 
@@ -109,7 +128,39 @@ export function WithdrawModal({ open, onClose }) {
 
   return (
     <Modal open={open} onClose={onClose} title="Withdraw Diamonds & Pets" maxWidth={520}>
-      {activeWithdraw ? (
+      {completedTrade ? (
+        <div className="modal-progress">
+          <CheckCircle2 size={42} className="text-green" />
+          <div style={{ fontWeight: 800, fontSize: 18 }}>Withdraw Completed!</div>
+          <div className="text-muted" style={{ fontSize: 13.5, textAlign: 'center' }}>
+            Sent to <strong>{completedTrade.robloxUsername}</strong> in PS99:
+            {(completedTrade.actualGems || completedTrade.amount || 0) > 0 && (
+              <div>
+                <strong className="text-gem">
+                  {formatGems(completedTrade.actualGems || completedTrade.amount)} Gems
+                </strong>
+              </div>
+            )}
+            {(completedTrade.actualPetsCount || completedTrade.pets?.length || 0) > 0 && (
+              <div>
+                <strong className="text-gold">
+                  {completedTrade.actualPetsCount || completedTrade.pets?.length} Pet(s)
+                </strong>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              setCompletedTrade(null);
+              onClose?.();
+            }}
+          >
+            Back to Games
+          </button>
+        </div>
+      ) : activeWithdraw ? (
         <div className="modal-progress">
           <Loader2 size={32} className="spin text-gold" />
           <div style={{ fontWeight: 700, fontSize: 15 }}>
