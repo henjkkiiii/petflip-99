@@ -162,7 +162,7 @@ export function Sidebar() {
 
           {isAdmin && (
             <a
-              href="/admin"
+              href="/#/admin"
               target="_blank"
               rel="noopener noreferrer"
               className="nav-link"

@@ -179,7 +179,7 @@ export function Topbar({
           <>
             {isAdmin && (
               <a
-                href="/admin"
+                href="/#/admin"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-sm btn-gold hide-sm"

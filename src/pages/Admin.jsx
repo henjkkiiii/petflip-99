@@ -2114,7 +2114,7 @@ export function Admin() {
                                     </>
                                   )}
                                   <a
-                                    href={`/battles/${b.id}`}
+                                    href={`/#/battles/${b.id}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="btn btn-sm btn-outline"

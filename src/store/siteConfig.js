@@ -113,7 +113,9 @@ export function applyThemeAndBrandingToDom(theme, branding) {
 
   if (branding?.siteName) {
     const suffix = branding.siteSuffix ? ` ${branding.siteSuffix}` : '';
-    const isAdmin = window.location.pathname.startsWith('/admin');
+    const isAdmin =
+      window.location.hash.startsWith('#/admin') ||
+      window.location.pathname.startsWith('/admin');
     document.title = isAdmin
       ? `${branding.siteName}${suffix} — Admin Dashboard`
       : `${branding.siteName}${suffix} — Gem Arcade`;

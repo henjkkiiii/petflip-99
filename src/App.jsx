@@ -47,7 +47,11 @@ function StandaloneAdminShell() {
 export default function App() {
   const location = useLocation();
   const isAdminRoute =
-    location.pathname === '/admin' || location.pathname.startsWith('/admin/');
+    location.pathname === '/admin' ||
+    location.pathname.startsWith('/admin/') ||
+    (typeof window !== 'undefined' &&
+      (window.location.pathname === '/admin' ||
+        window.location.pathname.startsWith('/admin/')));
 
   if (isAdminRoute) {
     return <StandaloneAdminShell />;
