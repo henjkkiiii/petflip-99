@@ -14,6 +14,7 @@ const HOST = process.env.HOST || (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
 const PORT = Number(process.env.PORT || 4173);
 const MAX_BODY_BYTES = 512 * 1024;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const SESSION_SECRET = process.env.SESSION_SECRET || 'petflip99-hmac-session-secret-v1';
 const INITIAL_ADMIN_BALANCE = 100_000_000;
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 const PROMO_RE = /^[A-Z0-9_-]{3,24}$/;
@@ -153,6 +154,7 @@ function loadOrCreateDb() {
   }
   if (!db.accounts || typeof db.accounts !== 'object') db.accounts = {};
   if (!db.sessions || typeof db.sessions !== 'object') db.sessions = {};
+  if (!db.revokedTokens || typeof db.revokedTokens !== 'object') db.revokedTokens = {};
   if (!db.promoCodes || typeof db.promoCodes !== 'object') db.promoCodes = {};
   if (!Array.isArray(db.chat)) db.chat = [];
   if (!Array.isArray(db.drops)) db.drops = [];
@@ -214,21 +216,56 @@ function bumpAdminRevision(acc) {
   acc.adminRevision = (Number(acc.adminRevision) || 1) + 1;
 }
 
+function signTokenPayload(payload) {
+  return crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
+}
+
+function verifySignedToken(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 4) return null;
+  const [userKey, verStr, expStr, sigHex] = parts;
+  const payload = `${userKey}.${verStr}.${expStr}`;
+  const expectedHex = signTokenPayload(payload);
+  try {
+    const sigBuf = Buffer.from(sigHex, 'hex');
+    const expBuf = Buffer.from(expectedHex, 'hex');
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  const exp = Number(expStr);
+  const tokenVersion = Number(verStr);
+  if (!userKey || !Number.isFinite(exp) || Date.now() > exp || !Number.isFinite(tokenVersion)) {
+    return null;
+  }
+  return { userKey, tokenVersion, exp };
+}
+
 function createSession(userKey) {
-  const token = crypto.randomBytes(24).toString('hex');
-  db.sessions[token] = { userKey, createdAt: Date.now() };
-  // Prune expired sessions
+  const ver = Number(db.accounts[userKey]?.tokenVersion) || 1;
+  const exp = Date.now() + SESSION_TTL_MS;
+  const payload = `${userKey}.${ver}.${exp}`;
+  const sigHex = signTokenPayload(payload);
+  // Prune expired revocations & legacy sessions
   const cutoff = Date.now() - SESSION_TTL_MS;
-  for (const [tok, sess] of Object.entries(db.sessions)) {
+  for (const [tok, ts] of Object.entries(db.revokedTokens || {})) {
+    if (!ts || ts < cutoff) delete db.revokedTokens[tok];
+  }
+  for (const [tok, sess] of Object.entries(db.sessions || {})) {
     if (!sess || (sess.createdAt || 0) < cutoff) {
       delete db.sessions[tok];
     }
   }
-  return token;
+  return `${payload}.${sigHex}`;
 }
 
 function purgeUserSessions(userKey) {
-  for (const [tok, sess] of Object.entries(db.sessions)) {
+  if (db.accounts[userKey]) {
+    db.accounts[userKey].tokenVersion = (Number(db.accounts[userKey].tokenVersion) || 1) + 1;
+  }
+  for (const [tok, sess] of Object.entries(db.sessions || {})) {
     if (sess?.userKey === userKey) {
       delete db.sessions[tok];
     }
@@ -248,7 +285,17 @@ function getBearerToken(req) {
 function getSessionAccount(req) {
   const token = getBearerToken(req);
   if (!token) return null;
-  const sess = db.sessions[token];
+  if (db.revokedTokens?.[token]) return null;
+
+  const signed = verifySignedToken(token);
+  if (signed) {
+    const acc = db.accounts[signed.userKey];
+    if (!acc || acc.banned) return null;
+    if ((Number(acc.tokenVersion) || 1) !== signed.tokenVersion) return null;
+    return { token, userKey: signed.userKey, account: acc };
+  }
+
+  const sess = db.sessions?.[token];
   if (!sess) return null;
   if (Date.now() - (sess.createdAt || 0) > SESSION_TTL_MS) {
     delete db.sessions[token];
@@ -475,8 +522,9 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === '/api/auth/logout') {
     const tok = getBearerToken(req);
-    if (tok && db.sessions[tok]) {
-      delete db.sessions[tok];
+    if (tok) {
+      db.revokedTokens[tok] = Date.now();
+      if (db.sessions[tok]) delete db.sessions[tok];
       saveDb();
     }
     return sendJson(res, 200, { ok: true });
