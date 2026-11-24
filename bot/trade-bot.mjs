@@ -42,6 +42,23 @@ function ocrRect(rect) {
   ]);
 }
 
+function checkGreenCount(rect) {
+  if (!rect) return 0;
+  const out = ps([
+    '-Action',
+    'check-green',
+    '-X1',
+    String(rect.x1),
+    '-Y1',
+    String(rect.y1),
+    '-X2',
+    String(rect.x2),
+    '-Y2',
+    String(rect.y2),
+  ]);
+  return Number(out) || 0;
+}
+
 function clickPoint(pt) {
   if (!pt) return;
   ps(['-Action', 'click', '-X1', String(pt.x), '-Y1', String(pt.y)]);
@@ -62,14 +79,24 @@ function parseOcrGems(text) {
 }
 
 function normUser(str) {
-  return String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return String(str || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .replace(/o/g, '0')
+    .replace(/[il]/g, '1');
 }
 
 function matchesUser(ocrText, robloxUsername) {
   const cleanOcr = normUser(ocrText);
   const cleanUser = normUser(robloxUsername);
   if (!cleanOcr || !cleanUser) return false;
-  return cleanOcr.includes(cleanUser);
+  if (cleanOcr.includes(cleanUser)) return true;
+  // Fuzzy prefix/substring match (if at least 60% of username chars match in order)
+  let qi = 0;
+  for (let i = 0; i < cleanOcr.length && qi < cleanUser.length; i++) {
+    if (cleanOcr[i] === cleanUser[qi]) qi++;
+  }
+  return qi >= Math.max(5, Math.floor(cleanUser.length * 0.72));
 }
 
 async function api(pathSuffix, method = 'GET', body = null) {
@@ -88,15 +115,22 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const ask = (q) => new Promise((resolve) => rl.question(q, resolve));
 
+function isFairnessModal(msg) {
+  return (
+    msg.includes('are you sure') ||
+    msg.includes('re you sure') ||
+    msg.includes('trade is fair') ||
+    msg.includes('before continuing') ||
+    msg.includes('anything from this trade')
+  );
+}
+
 async function waitForConfirmButton(timeoutMs = 35_000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const modalText = ocrRect(coords.completedBox).toLowerCase();
-    if (
-      (modalText.includes('are you sure') || modalText.includes('anything from this trade')) &&
-      coords.modalYesBtn
-    ) {
-      console.log('  Handling "Are you sure?" popup -> clicking Yes!');
+    if (isFairnessModal(modalText) && coords.modalYesBtn) {
+      console.log(`  Handling fairness/confirm popup ("${modalText}") -> clicking Yes!`);
       clickPoint(coords.modalYesBtn);
       await sleep(700);
       continue;
@@ -110,25 +144,24 @@ async function waitForConfirmButton(timeoutMs = 35_000) {
   return false;
 }
 
-async function waitForTradeCompleted(timeoutMs = 15_000) {
+async function waitForTradeCompleted(timeoutMs = 25_000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const msg = ocrRect(coords.completedBox).toLowerCase();
-    if (msg.includes('are you sure') || msg.includes('anything from this trade')) {
-      if (coords.modalYesBtn) {
-        console.log('  Handling "Are you sure?" popup -> clicking Yes!');
-        await sleep(250);
-        clickPoint(coords.modalYesBtn);
-        await sleep(900);
-        continue;
-      }
+    if (isFairnessModal(msg) && coords.modalYesBtn) {
+      console.log(`  Handling fairness/confirm popup ("${msg}") -> clicking Yes!`);
+      await sleep(250);
+      clickPoint(coords.modalYesBtn);
+      await sleep(900);
+      continue;
     }
     if (msg.includes('completed') || msg.includes('successfully')) {
+      console.log('  Verified "Trade successfully completed!" on screen -> clicking Ok!');
       if (coords.okPopupBtn) {
         await sleep(300);
         clickPoint(coords.okPopupBtn);
       }
-      await sleep(800);
+      await sleep(900);
       const afterMsg = ocrRect(coords.completedBox).toLowerCase();
       if (afterMsg.includes('friend') && coords.friendNoBtn) {
         console.log('  Closing "Friend user?" popup -> No');
@@ -140,7 +173,7 @@ async function waitForTradeCompleted(timeoutMs = 15_000) {
       clickPoint(coords.friendNoBtn);
       return true;
     }
-    await sleep(700);
+    await sleep(600);
   }
   return false;
 }
@@ -198,8 +231,20 @@ async function loop() {
           await api('/api/bot/claim', 'POST', { jobId: match.id });
 
           if (match.type === 'withdraw') {
-            typeAt(coords.myGemInputBtn, String(match.amount));
-            await sleep(450);
+            const wdPets = Array.isArray(match.pets) ? match.pets.slice(0, 12) : [];
+            if (wdPets.length > 0 && coords.mySearchInputBtn && coords.myFirstPetSlot) {
+              console.log(`  Adding ${wdPets.length} pet(s) to withdraw offer...`);
+              for (const pet of wdPets) {
+                typeAt(coords.mySearchInputBtn, pet.name);
+                await sleep(450);
+                clickPoint(coords.myFirstPetSlot);
+                await sleep(350);
+              }
+            }
+            if (match.amount > 0) {
+              typeAt(coords.myGemInputBtn, String(match.amount));
+              await sleep(450);
+            }
             clickPoint(coords.readyBtn);
             console.log('  Clicked Ready! Waiting for other player to Ready up -> Confirm...');
 
@@ -213,14 +258,22 @@ async function loop() {
 
             const ok = AUTO_APPROVE
               ? 'y'
-              : (await ask(`Confirm button is active! Send ${match.amount.toLocaleString()} gems? (y/N): `))
+              : (
+                  await ask(
+                    `Confirm button is active! Send ${match.amount.toLocaleString()} gems + ${wdPets.length} pet(s)? (y/N): `
+                  )
+                )
                   .trim()
                   .toLowerCase();
 
             if (ok === 'y' || ok === 'yes') {
               clickPoint(coords.confirmBtn);
-              console.log('  Clicked Confirm! Waiting for trade completion...');
-              await waitForTradeCompleted(15_000);
+              console.log('  Clicked Confirm! Verifying trade completion...');
+              const completed = await waitForTradeCompleted(25_000);
+              if (!completed) {
+                console.log('  [ABORT] Did NOT see "Trade successfully completed!" — NOT marking sent.');
+                continue;
+              }
               await api('/api/bot/withdraw-complete', 'POST', {
                 jobId: match.id,
                 txId: `wd-${match.id}-${Date.now()}`,
@@ -232,36 +285,39 @@ async function loop() {
               console.log('  [CANCELLED] Refunded withdraw.');
             }
           } else {
-            // Deposit: WAIT until opponent adds gems/pets or clicks Ready! (never rush while 0)
-            console.log('  Waiting for opponent to add gems/pets or Ready up...');
-            let detectedGems = 0;
-            let detectedTradeVal = 0;
+            // Deposit: STRICTLY wait until opponent clicks Ready! (green Ready! pixels OR OCR)
+            console.log('  Waiting for opponent to finish adding items & click Ready!...');
             let opponentReady = false;
             const waitStart = Date.now();
-            while (Date.now() - waitStart < 60_000) {
-              detectedGems = parseOcrGems(ocrRect(coords.theirGemsBox));
-              detectedTradeVal = coords.theirTradeValueBox
-                ? parseOcrGems(ocrRect(coords.theirTradeValueBox))
-                : 0;
-              const offerText = coords.theirOfferBox ? ocrRect(coords.theirOfferBox).toLowerCase() : '';
-              opponentReady = offerText.includes('ready');
-              if (opponentReady || detectedGems > 0 || detectedTradeVal > 0) {
+            while (Date.now() - waitStart < 90_000) {
+              const greenPx = checkGreenCount(coords.theirReadyBox);
+              const readyText = ocrRect(coords.theirReadyBox || coords.theirOfferBox).toLowerCase();
+              console.log(`  [WAIT] greenPx=${greenPx}, readyText="${readyText}"`);
+              if (greenPx >= 15 || readyText.includes('ready')) {
+                opponentReady = true;
                 break;
               }
-              await sleep(800);
+              await sleep(600);
             }
 
-            // Give 1.8s for PS99's (1.4) anti-scam timer & final item updates to settle
-            await sleep(1800);
+            if (!opponentReady) {
+              console.log('  [TIMEOUT] Opponent did not click Ready! in time -> Cancelling.');
+              clickPoint(coords.declineBtn);
+              await api('/api/bot/cancel', 'POST', { jobId: match.id, reason: 'Opponent did not Ready up' });
+              continue;
+            }
+
+            // Wait 800ms for numbers to settle after they Ready up
+            await sleep(800);
             const rawGems = ocrRect(coords.theirGemsBox);
-            detectedGems = parseOcrGems(rawGems);
-            detectedTradeVal = coords.theirTradeValueBox
+            let detectedGems = parseOcrGems(rawGems);
+            const detectedTradeVal = coords.theirTradeValueBox
               ? parseOcrGems(ocrRect(coords.theirTradeValueBox))
               : detectedGems;
             const queuedPets = Array.isArray(match.pets) ? match.pets.slice(0, 12) : [];
 
             console.log(
-              `  OCR saw Gems: "${rawGems}" -> ${detectedGems.toLocaleString()} | Trade Value: ${detectedTradeVal.toLocaleString()} | Queued Pets: ${queuedPets.length}/12`
+              `  Opponent is READY! OCR Gems: "${rawGems}" -> ${detectedGems.toLocaleString()} | Trade Value: ${detectedTradeVal.toLocaleString()} | Queued Pets: ${queuedPets.length}/12`
             );
 
             let finalGems = detectedGems;
@@ -291,10 +347,17 @@ async function loop() {
 
             const recheckGems = parseOcrGems(ocrRect(coords.theirGemsBox));
             if (recheckGems > 0) finalGems = recheckGems;
+            if (finalGems === 0 && match.amount > 0) {
+              finalGems = match.amount;
+            }
 
             clickPoint(coords.confirmBtn);
-            console.log('  Clicked Confirm! Waiting for trade completion...');
-            await waitForTradeCompleted(15_000);
+            console.log('  Clicked Confirm! Verifying trade completion...');
+            const completed = await waitForTradeCompleted(25_000);
+            if (!completed) {
+              console.log('  [ABORT] Did NOT see "Trade successfully completed!" — NOT crediting gems/pets.');
+              continue;
+            }
             await api('/api/bot/deposit-complete', 'POST', {
               jobId: match.id,
               gems: finalGems,

@@ -936,7 +936,12 @@ function pruneTradeQueue() {
         const acc = db.accounts[job.userKey];
         if (acc) {
           if (!acc.data) acc.data = createDefaultAccountData(0);
-          acc.data.balance = Math.max(0, (acc.data.balance || 0) + job.amount);
+          if (job.amount > 0) {
+            acc.data.balance = Math.max(0, (acc.data.balance || 0) + job.amount);
+          }
+          if (Array.isArray(job.pets) && job.pets.length > 0) {
+            acc.data.inventory = [...job.pets, ...(acc.data.inventory || [])].slice(0, 500);
+          }
           bumpAdminRevision(acc, 'trade');
         }
       }
@@ -998,11 +1003,15 @@ function completeWithdrawJob(job, txId, actorName = 'TradeBot') {
   if (txId && db.processedBotTx[txId]) return false;
   job.status = 'completed';
   job.actualGems = job.amount;
+  job.actualPetsCount = Array.isArray(job.pets) ? job.pets.length : 0;
   job.txId = txId || `tx-${Date.now()}`;
   job.completedBy = actorName;
   job.finishedAt = Date.now();
   if (txId) db.processedBotTx[txId] = job.finishedAt;
-  logAudit(actorName, `Withdraw trade sent to ${job.username} (${job.robloxUsername}): ${formatGemsServer(job.amount)} gems`);
+  logAudit(
+    actorName,
+    `Withdraw trade sent to ${job.username} (${job.robloxUsername}): ${formatGemsServer(job.amount)} gems, ${job.actualPetsCount} pets`
+  );
   return true;
 }
 
@@ -1016,7 +1025,12 @@ function cancelTradeJob(job, reason = 'Cancelled', actorName = 'System') {
     const acc = db.accounts[job.userKey];
     if (acc) {
       if (!acc.data) acc.data = createDefaultAccountData(0);
-      acc.data.balance = Math.max(0, (acc.data.balance || 0) + job.amount);
+      if (job.amount > 0) {
+        acc.data.balance = Math.max(0, (acc.data.balance || 0) + job.amount);
+      }
+      if (Array.isArray(job.pets) && job.pets.length > 0) {
+        acc.data.inventory = [...job.pets, ...(acc.data.inventory || [])].slice(0, 500);
+      }
       bumpAdminRevision(acc, 'trade');
     }
   }
@@ -1813,27 +1827,44 @@ async function handleApi(req, res, pathname) {
         error: `You already have an active ${existing.type} trade in queue. Cancel or finish it first.`,
       });
     }
-    const amount = Math.round(Number(body.amount) || 0);
+    const amount = Math.max(0, Math.round(Number(body.amount) || 0));
+    let cleanPets = [];
     if (type === 'withdraw') {
-      if (!Number.isFinite(amount) || amount < 1000) {
-        return sendJson(res, 400, { ok: false, error: 'Minimum trade withdraw is 1,000 gems.' });
+      const reqUids = Array.isArray(body.petUids) ? Array.from(new Set(body.petUids.map(String))).slice(0, 12) : [];
+      if (amount <= 0 && reqUids.length === 0) {
+        return sendJson(res, 400, { ok: false, error: 'Enter gems (>= 1,000) or select at least 1 pet to withdraw.' });
       }
-      if ((me.data?.balance || 0) < amount) {
+      if (amount > 0 && amount < 1000) {
+        return sendJson(res, 400, { ok: false, error: 'Minimum gem withdraw is 1,000 gems (or set 0 for pets-only).' });
+      }
+      if (amount > (me.data?.balance || 0)) {
         return sendJson(res, 400, { ok: false, error: 'Insufficient gem balance for trade withdraw.' });
       }
+      const inv = me.data?.inventory || [];
+      if (reqUids.length > 0) {
+        const uidSet = new Set(reqUids);
+        cleanPets = inv.filter((it) => it && uidSet.has(it.uid));
+        if (cleanPets.length !== reqUids.length) {
+          return sendJson(res, 400, { ok: false, error: 'One or more selected pets are no longer in your inventory.' });
+        }
+        me.data.inventory = inv.filter((it) => !uidSet.has(it.uid));
+      }
       if (!me.data) me.data = createDefaultAccountData(0);
-      me.data.balance = Math.max(0, (me.data.balance || 0) - amount);
+      if (amount > 0) {
+        me.data.balance = Math.max(0, (me.data.balance || 0) - amount);
+      }
       bumpAdminRevision(me, 'trade');
+    } else {
+      const rawPets = Array.isArray(body.pets) ? body.pets.slice(0, 12) : [];
+      cleanPets = rawPets
+        .filter((p) => p && p.name)
+        .map((p) => ({
+          name: String(p.name).slice(0, 80),
+          thumb: String(p.thumb || ''),
+          value: Math.max(0, Math.round(Number(p.value) || 0)),
+          tier: String(p.tier || 'huge'),
+        }));
     }
-    const rawPets = type === 'deposit' && Array.isArray(body.pets) ? body.pets.slice(0, 12) : [];
-    const cleanPets = rawPets
-      .filter((p) => p && p.name)
-      .map((p) => ({
-        name: String(p.name).slice(0, 80),
-        thumb: String(p.thumb || ''),
-        value: Math.max(0, Math.round(Number(p.value) || 0)),
-        tier: String(p.tier || 'huge'),
-      }));
     const now = Date.now();
     const job = {
       id: `tr-${now}-${crypto.randomBytes(3).toString('hex')}`,

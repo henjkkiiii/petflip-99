@@ -21,8 +21,8 @@ export const useTrades = create((set, get) => ({
     if (Object.keys(patch).length > 0) set(patch);
   },
 
-  async requestTrade({ type, robloxUsername, amount, pets = [] }) {
-    const res = await apiPost('/api/trades/request', { type, robloxUsername, amount, pets });
+  async requestTrade({ type, robloxUsername, amount, pets = [], petUids = [] }) {
+    const res = await apiPost('/api/trades/request', { type, robloxUsername, amount, pets, petUids });
     if (res.ok) {
       if (Array.isArray(res.myTrades)) set({ myTrades: res.myTrades });
       if (res.account) tradeBridge?.applyAccountFromServer?.(res);

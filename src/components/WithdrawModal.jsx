@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { ExternalLink, Loader2, Swords, X } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Check, ExternalLink, Loader2, Swords, X } from 'lucide-react';
 import { Modal } from './Modal.jsx';
 import { GemIcon } from './GemIcon.jsx';
+import { PetImage } from './PetImage.jsx';
 import { useGame } from '../store/useGame.js';
 import { useAuth } from '../store/useAuth.js';
 import { useSiteConfig } from '../store/siteConfig.js';
@@ -12,6 +13,7 @@ import { sound } from '../lib/sound.js';
 
 export function WithdrawModal({ open, onClose }) {
   const balance = useGame((s) => s.balance);
+  const inventory = useGame((s) => s.inventory);
   const username = useGame((s) => s.username);
   const currentUserKey = useAuth((s) => s.currentUserKey);
   const openAuthModal = useAuth((s) => s.openAuthModal);
@@ -22,7 +24,9 @@ export function WithdrawModal({ open, onClose }) {
   const pushToast = useToast((s) => s.push);
 
   const [robloxUser, setRobloxUser] = useState(username);
-  const [amountText, setAmountText] = useState('10M');
+  const [amountText, setAmountText] = useState('0');
+  const [petFilter, setPetFilter] = useState('');
+  const [selectedUids, setSelectedUids] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
   const activeWithdraw = myTrades.find(
@@ -32,9 +36,29 @@ export function WithdrawModal({ open, onClose }) {
   useEffect(() => {
     if (open) {
       setRobloxUser((prev) => (prev && prev !== 'Guest' ? prev : username));
-      setAmountText(balance >= 10_000_000 ? '10M' : formatGems(Math.max(0, balance)));
+      setAmountText(balance >= 10_000_000 ? '10M' : '0');
+      setSelectedUids([]);
     }
   }, [open, username, balance]);
+
+  const filteredInv = useMemo(() => {
+    const q = petFilter.trim().toLowerCase();
+    return (inventory || [])
+      .filter((p) => !q || (p.name || '').toLowerCase().includes(q))
+      .slice(0, 40);
+  }, [inventory, petFilter]);
+
+  const togglePetUid = (uid) => {
+    sound.click();
+    setSelectedUids((prev) => {
+      if (prev.includes(uid)) return prev.filter((id) => id !== uid);
+      if (prev.length >= 12) {
+        pushToast('Max 12 pets per withdraw trade.', 'error');
+        return prev;
+      }
+      return [...prev, uid];
+    });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -47,9 +71,14 @@ export function WithdrawModal({ open, onClose }) {
       pushToast('Enter your exact Roblox username (3+ chars).', 'error');
       return;
     }
-    const amt = parseGems(amountText);
-    if (!Number.isInteger(amt) || amt < 1000) {
-      pushToast('Minimum withdraw is 1,000 gems.', 'error');
+    const rawAmt = amountText.trim() === '' || amountText.trim() === '0' ? 0 : parseGems(amountText);
+    const amt = Number.isFinite(rawAmt) && rawAmt > 0 ? rawAmt : 0;
+    if (amt === 0 && selectedUids.length === 0) {
+      pushToast('Enter gems (>= 1,000) or select at least 1 pet to withdraw.', 'error');
+      return;
+    }
+    if (amt > 0 && amt < 1000) {
+      pushToast('Minimum gem withdraw is 1,000 gems (or set 0 for pets-only).', 'error');
       return;
     }
     if (amt > balance) {
@@ -63,6 +92,7 @@ export function WithdrawModal({ open, onClose }) {
         type: 'withdraw',
         robloxUsername: robloxUser.trim(),
         amount: amt,
+        petUids: selectedUids,
       });
       if (!res.ok) {
         sound.lose();
@@ -70,21 +100,26 @@ export function WithdrawModal({ open, onClose }) {
         return;
       }
       sound.cashout();
-      pushToast(`Queued ${formatGems(amt)} withdraw! Trade the bot in PS99.`, 'success');
+      setSelectedUids([]);
+      pushToast('Withdraw trade queued! Trade the bot in PS99.', 'success');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Withdraw Diamonds (In-Game Trade)">
+    <Modal open={open} onClose={onClose} title="Withdraw Diamonds & Pets" maxWidth={520}>
       {activeWithdraw ? (
         <div className="modal-progress">
           <Loader2 size={32} className="spin text-gold" />
           <div style={{ fontWeight: 700, fontSize: 15 }}>
             {activeWithdraw.status === 'processing'
-              ? 'Bot is sending your gems in-game…'
-              : `Queued Withdraw: ${formatGems(activeWithdraw.amount)} Gems`}
+              ? 'Bot is sending your items in-game…'
+              : `Queued Withdraw: ${formatGems(activeWithdraw.amount || 0)} Gems${
+                  (activeWithdraw.pets || []).length > 0
+                    ? ` + ${activeWithdraw.pets.length} Pet(s)`
+                    : ''
+                }`}
           </div>
           <div className="text-muted" style={{ fontSize: 13, textAlign: 'center' }}>
             Roblox: <strong>{activeWithdraw.robloxUsername}</strong>
@@ -95,6 +130,12 @@ export function WithdrawModal({ open, onClose }) {
               </>
             )}
           </div>
+          {(activeWithdraw.pets || []).length > 0 && (
+            <div className="text-gold" style={{ fontSize: 12.5, fontWeight: 700 }}>
+              Pets ({activeWithdraw.pets.length}/12):{' '}
+              {activeWithdraw.pets.map((p) => p.name).join(', ')}
+            </div>
+          )}
           {botSettings?.privateServerUrl && (
             <a
               href={botSettings.privateServerUrl}
@@ -111,7 +152,7 @@ export function WithdrawModal({ open, onClose }) {
             onClick={async () => {
               sound.click();
               const res = await cancelTrade(activeWithdraw.id);
-              if (res.ok) pushToast('Withdraw cancelled & gems refunded!', 'info');
+              if (res.ok) pushToast('Withdraw cancelled & gems/pets refunded!', 'info');
             }}
           >
             <X size={14} /> Cancel &amp; Refund
@@ -120,7 +161,8 @@ export function WithdrawModal({ open, onClose }) {
       ) : (
         <form onSubmit={handleSubmit} className="modal-form">
           <div className="text-muted" style={{ fontSize: 13 }}>
-            Available balance: <strong className="text-gem">{formatGems(balance)}</strong> gems
+            Available: <strong className="text-gem">{formatGems(balance)}</strong> gems ·{' '}
+            <strong>{inventory.length}</strong> pets
           </div>
 
           <label className="field-label">
@@ -135,7 +177,7 @@ export function WithdrawModal({ open, onClose }) {
           </label>
 
           <label className="field-label">
-            <span>Withdraw Amount</span>
+            <span>Gems to Withdraw (0 for pets-only)</span>
             <div className="input-icon-wrap">
               <GemIcon size={18} />
               <input
@@ -143,30 +185,88 @@ export function WithdrawModal({ open, onClose }) {
                 style={{ paddingLeft: 38 }}
                 value={amountText}
                 onChange={(e) => setAmountText(e.target.value)}
-                placeholder="e.g. 10M"
-                required
+                placeholder="0 or e.g. 10M"
               />
             </div>
           </label>
 
           <div className="preset-row">
-            {[0.25, 0.5, 1].map((frac) => {
-              const val = Math.max(1000, Math.floor(balance * frac));
-              return (
-                <button
-                  key={frac}
-                  type="button"
-                  className="preset-btn"
-                  onClick={() => {
-                    sound.click();
-                    setAmountText(String(val));
-                  }}
-                >
-                  {frac === 1 ? 'Max' : `${frac * 100}%`}
-                </button>
-              );
-            })}
+            {[
+              { label: '0', val: 0 },
+              { label: '25%', val: Math.max(0, Math.floor(balance * 0.25)) },
+              { label: '50%', val: Math.max(0, Math.floor(balance * 0.5)) },
+              { label: 'Max', val: Math.max(0, balance) },
+            ].map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                className="preset-btn"
+                onClick={() => {
+                  sound.click();
+                  setAmountText(String(p.val));
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
+
+          {inventory.length > 0 && (
+            <div className="field-label">
+              <span>Pets from Inventory ({selectedUids.length}/12 max)</span>
+              <input
+                className="input"
+                value={petFilter}
+                onChange={(e) => setPetFilter(e.target.value)}
+                placeholder="Filter your inventory pets…"
+              />
+              <div
+                style={{
+                  maxHeight: 145,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  background: 'var(--bg)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 8,
+                  padding: 6,
+                }}
+              >
+                {filteredInv.map((p) => {
+                  const picked = selectedUids.includes(p.uid);
+                  return (
+                    <button
+                      key={p.uid}
+                      type="button"
+                      onClick={() => togglePetUid(p.uid)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                        padding: '4px 6px',
+                        borderRadius: 6,
+                        fontSize: 12,
+                        textAlign: 'left',
+                        background: picked ? 'rgba(56, 217, 255, 0.14)' : 'transparent',
+                        border: picked ? '1px solid rgba(56, 217, 255, 0.4)' : '1px solid transparent',
+                      }}
+                    >
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <PetImage thumb={p.thumb} alt={p.name} size={22} />
+                        <span>{p.name}</span>
+                      </span>
+                      <span className="text-gem" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {formatGems(p.value)}
+                        {picked && <Check size={13} className="text-green" />}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <button type="submit" className="btn btn-lg btn-gold" disabled={submitting}>
             <Swords size={16} />

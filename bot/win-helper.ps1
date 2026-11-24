@@ -110,6 +110,31 @@ if ($Action -eq "type-text") {
   exit 0
 }
 
+if ($Action -eq "check-green") {
+  $left = [Math]::Min($X1, $X2)
+  $top = [Math]::Min($Y1, $Y2)
+  $width = [Math]::Max(10, [Math]::Abs($X2 - $X1))
+  $height = [Math]::Max(10, [Math]::Abs($Y2 - $Y1))
+
+  $bmp = New-Object System.Drawing.Bitmap($width, $height)
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.CopyFromScreen($left, $top, 0, 0, $bmp.Size)
+  $g.Dispose()
+
+  $greenCount = 0
+  for ($y = 0; $y -lt $height; $y++) {
+    for ($x = 0; $x -lt $width; $x++) {
+      $c = $bmp.GetPixel($x, $y)
+      if ($c.G -gt 150 -and ($c.G - $c.R) -gt 35 -and ($c.G - $c.B) -gt 35) {
+        $greenCount++
+      }
+    }
+  }
+  $bmp.Dispose()
+  Write-Output $greenCount
+  exit 0
+}
+
 if ($Action -eq "ocr-rect") {
   $left = [Math]::Min($X1, $X2)
   $top = [Math]::Min($Y1, $Y2)
