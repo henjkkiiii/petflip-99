@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, RefreshCw, Swords, Trash2, Users } from 'lucide-react';
+import { Bot, Eye, Plus, RefreshCw, Swords, Trash2, Users } from 'lucide-react';
 import ps99 from '../data/ps99.json';
 import { formatGems } from '../lib/format.js';
 import { sound } from '../lib/sound.js';
 import { useBattles } from '../store/battles.js';
-import { useGame } from '../store/useGame.js';
+import { useAuth } from '../store/useAuth.js';
 import { getEffectiveCratePrice, useSiteConfig } from '../store/siteConfig.js';
 import { useToast } from '../store/toast.js';
 import { PetImage } from '../components/PetImage.jsx';
@@ -15,12 +15,12 @@ import { Modal } from '../components/Modal.jsx';
 export function Battles() {
   const navigate = useNavigate();
   const rooms = useBattles((s) => s.rooms);
-  const refreshLobby = useBattles((s) => s.refreshLobby);
-  const createRoom = useBattles((s) => s.createRoom);
-  const joinRoom = useBattles((s) => s.joinRoom);
+  const createBattle = useBattles((s) => s.createBattle);
+  const joinBattle = useBattles((s) => s.joinBattle);
 
-  const placeBet = useGame((s) => s.placeBet);
-  const username = useGame((s) => s.username);
+  const currentUserKey = useAuth((s) => s.currentUserKey);
+  const syncFromServer = useAuth((s) => s.syncFromServer);
+  const openAuthModal = useAuth((s) => s.openAuthModal);
   const pushToast = useToast((s) => s.push);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -30,6 +30,9 @@ export function Battles() {
     ps99.crates[1] || ps99.crates[0],
   ]);
   const [crateSearch, setCrateSearch] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [joiningId, setJoiningId] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const crateDiscountPct = useSiteConfig((s) => s.crateDiscountPct);
   const cratePriceOverrides = useSiteConfig((s) => s.cratePriceOverrides);
@@ -37,6 +40,15 @@ export function Battles() {
     () => ({ crateDiscountPct, cratePriceOverrides }),
     [crateDiscountPct, cratePriceOverrides]
   );
+
+  const sortedRooms = useMemo(() => {
+    const rank = (s) => (s === 'waiting' ? 0 : s === 'playing' ? 1 : 2);
+    return [...rooms].sort((a, b) => {
+      const diff = rank(a.status) - rank(b.status);
+      if (diff !== 0) return diff;
+      return (b.createdAt || 0) - (a.createdAt || 0);
+    });
+  }, [rooms]);
 
   const filteredCrates = useMemo(() => {
     const q = crateSearch.trim().toLowerCase();
@@ -62,30 +74,81 @@ export function Battles() {
     setSelectedCrates((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const handleCreate = () => {
+  const handleOpenCreate = () => {
+    sound.click();
+    if (!currentUserKey) {
+      pushToast('Sign in or create an account to create a battle!', 'info');
+      openAuthModal('login');
+      return;
+    }
+    setCreateOpen(true);
+  };
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    sound.click();
+    setRefreshing(true);
+    try {
+      await syncFromServer(false);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (creating) return;
     if (selectedCrates.length === 0) {
       pushToast('Pick at least 1 crate for the battle!', 'error');
       return;
     }
-    if (!placeBet(totalCost)) return;
     sound.click();
-    const room = createRoom({ mode, crates: selectedCrates, username });
-    setCreateOpen(false);
-    navigate(`/battles/${room.id}`);
-  };
-
-  const handleJoin = (room) => {
-    const alreadyIn = room.players.some((p) => p?.isUser);
-    if (!alreadyIn) {
-      if (!placeBet(room.cost)) return;
-      const ok = joinRoom(room.id, username);
-      if (!ok) {
-        pushToast('Battle room is already full!', 'error');
+    setCreating(true);
+    try {
+      const res = await createBattle({
+        mode,
+        crateIds: selectedCrates.map((c) => c.id),
+      });
+      if (!res.ok) {
+        sound.lose();
+        pushToast(res.error || 'Could not create battle.', 'error');
         return;
       }
+      setCreateOpen(false);
+      navigate(`/battles/${res.battle.id}`);
+    } finally {
+      setCreating(false);
     }
+  };
+
+  const handleJoin = async (room) => {
+    if (joiningId) return;
+    const alreadyIn = Boolean(
+      currentUserKey && room.players.some((p) => p && !p.isBot && p.userKey === currentUserKey)
+    );
+    if (alreadyIn) {
+      sound.click();
+      navigate(`/battles/${room.id}`);
+      return;
+    }
+    if (!currentUserKey) {
+      pushToast('Sign in or create an account to join this battle!', 'info');
+      openAuthModal('login');
+      return;
+    }
+
     sound.click();
-    navigate(`/battles/${room.id}`);
+    setJoiningId(room.id);
+    try {
+      const res = await joinBattle(room.id);
+      if (!res.ok) {
+        sound.lose();
+        pushToast(res.error || 'Could not join battle.', 'error');
+        return;
+      }
+      navigate(`/battles/${room.id}`);
+    } finally {
+      setJoiningId(null);
+    }
   };
 
   return (
@@ -97,8 +160,8 @@ export function Battles() {
             <span>Case Battles</span>
           </h1>
           <div className="text-muted" style={{ fontSize: 13.5 }}>
-            Unbox custom PS99 crates head-to-head against bots — highest total pet value takes
-            everything! (Live PS99 RAP)
+            Battle other live players on shared PS99 crates — open seats stay open for real players
+            unless the creator calls bots. Highest total pet value wins everything!
           </div>
         </div>
 
@@ -106,116 +169,226 @@ export function Battles() {
           <button
             type="button"
             className="btn btn-outline"
-            onClick={() => {
-              sound.click();
-              refreshLobby();
-            }}
+            disabled={refreshing}
+            onClick={handleRefresh}
           >
-            <RefreshCw size={16} /> Refresh
+            <RefreshCw size={16} /> {refreshing ? 'Syncing…' : 'Refresh'}
           </button>
           <button
             type="button"
             className="btn btn-green"
-            onClick={() => {
-              sound.click();
-              setCreateOpen(true);
-            }}
+            onClick={handleOpenCreate}
           >
             <Plus size={17} /> Create Battle
           </button>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gap: 12 }}>
-        {rooms.map((room) => {
-          const filled = room.players.filter(Boolean).length;
-          const isFull = filled >= room.seatsCount;
-          const userIn = room.players.some((p) => p?.isUser);
+      {sortedRooms.length === 0 ? (
+        <div
+          className="card"
+          style={{
+            padding: '38px 24px',
+            textAlign: 'center',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
+          <Swords size={34} className="text-gold" />
+          <h3 style={{ margin: 0 }}>No Case Battles active right now</h3>
+          <p className="text-muted" style={{ maxWidth: 460, fontSize: 13.5, margin: 0 }}>
+            Create a battle room so other online players can join your open seats, or call bots in
+            empty slots whenever you don&apos;t want to wait.
+          </p>
+          <button
+            type="button"
+            className="btn btn-green"
+            style={{ marginTop: 6 }}
+            onClick={handleOpenCreate}
+          >
+            <Plus size={16} /> Create First Battle
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 12 }}>
+          {sortedRooms.map((room) => {
+            const filled = room.players.filter(Boolean).length;
+            const isFull = filled >= room.seatsCount;
+            const userIn = Boolean(
+              currentUserKey &&
+                room.players.some((p) => p && !p.isBot && p.userKey === currentUserKey)
+            );
 
-          return (
-            <div
-              key={room.id}
-              className="card"
-              style={{
-                padding: '14px 18px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 16,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-                <span
-                  className="game-tag"
-                  style={{ background: 'rgba(255,197,49,0.16)', color: 'var(--gold)' }}
-                >
-                  {room.mode}
-                </span>
+            const statusLabel =
+              room.status === 'waiting'
+                ? 'Waiting'
+                : room.status === 'playing'
+                  ? 'Live'
+                  : 'Finished';
+            const statusBg =
+              room.status === 'waiting'
+                ? 'rgba(56, 217, 255, 0.14)'
+                : room.status === 'playing'
+                  ? 'rgba(34, 197, 94, 0.16)'
+                  : 'rgba(148, 163, 184, 0.14)';
+            const statusColor =
+              room.status === 'waiting'
+                ? 'var(--gem)'
+                : room.status === 'playing'
+                  ? 'var(--green)'
+                  : 'var(--text-muted)';
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {room.crates.slice(0, 6).map((crate, i) => (
-                    <PetImage
-                      key={i}
-                      thumb={crate.icon}
-                      alt={crate.name}
-                      size={38}
-                      className="rounded-crate"
-                    />
-                  ))}
-                  {room.crates.length > 6 && (
-                    <span className="text-muted" style={{ fontSize: 12, fontWeight: 700 }}>
-                      +{room.crates.length - 6}
+            return (
+              <div
+                key={room.id}
+                className="card"
+                style={{
+                  padding: '14px 18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 16,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span
+                      className="game-tag"
+                      style={{ background: 'rgba(255,197,49,0.16)', color: 'var(--gold)' }}
+                    >
+                      {room.mode}
                     </span>
+                    <span
+                      className="game-tag"
+                      style={{ background: statusBg, color: statusColor }}
+                    >
+                      {statusLabel}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {room.crates.slice(0, 6).map((crate, i) => (
+                      <PetImage
+                        key={i}
+                        thumb={crate.icon}
+                        alt={crate.name}
+                        size={38}
+                        className="rounded-crate"
+                      />
+                    ))}
+                    {room.crates.length > 6 && (
+                      <span className="text-muted" style={{ fontSize: 12, fontWeight: 700 }}>
+                        +{room.crates.length - 6}
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>
+                      {room.crates.length} {room.crates.length === 1 ? 'Round' : 'Rounds'}
+                    </div>
+                    <div
+                      className="text-muted"
+                      style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}
+                    >
+                      <Users size={13} />
+                      <span>
+                        {filled}/{room.seatsCount} players
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {room.players.map((p, idx) => {
+                      if (!p) {
+                        return (
+                          <span
+                            key={idx}
+                            style={{
+                              fontSize: 11.5,
+                              padding: '3px 8px',
+                              borderRadius: 999,
+                              border: '1px dashed var(--border-light)',
+                              color: 'var(--text-muted)',
+                            }}
+                          >
+                            Open
+                          </span>
+                        );
+                      }
+                      const isMe = Boolean(currentUserKey && !p.isBot && p.userKey === currentUserKey);
+                      return (
+                        <span
+                          key={idx}
+                          style={{
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            padding: '3px 8px',
+                            borderRadius: 999,
+                            background: isMe
+                              ? 'rgba(56, 217, 255, 0.16)'
+                              : 'rgba(255, 255, 255, 0.06)',
+                            border: `1px solid ${
+                              isMe ? 'rgba(56, 217, 255, 0.45)' : 'var(--border)'
+                            }`,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          {p.isBot && <Bot size={11} className="text-muted" />}
+                          <span>{p.name}</span>
+                          {isMe && <span className="you-tag">YOU</span>}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ textAlign: 'right', marginRight: 4 }}>
+                    <div className="text-muted" style={{ fontSize: 11 }}>
+                      Entry Cost
+                    </div>
+                    <GemAmount value={room.cost} iconSize={15} />
+                  </div>
+
+                  {userIn ? (
+                    <Link to={`/battles/${room.id}`} className="btn btn-primary">
+                      Enter Room
+                    </Link>
+                  ) : room.status === 'waiting' && !isFull ? (
+                    <>
+                      <Link to={`/battles/${room.id}`} className="btn btn-outline">
+                        <Eye size={15} /> View
+                      </Link>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={joiningId === room.id}
+                        onClick={() => handleJoin(room)}
+                      >
+                        {joiningId === room.id ? 'Joining…' : `Join (${formatGems(room.cost)})`}
+                      </button>
+                    </>
+                  ) : (
+                    <Link to={`/battles/${room.id}`} className="btn btn-outline">
+                      {room.status === 'finished' ? 'Results' : 'Watch'}
+                    </Link>
                   )}
                 </div>
-
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>
-                    {room.crates.length} {room.crates.length === 1 ? 'Round' : 'Rounds'}
-                  </div>
-                  <div
-                    className="text-muted"
-                    style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 }}
-                  >
-                    <Users size={13} />
-                    <span>
-                      {filled}/{room.seatsCount} players
-                    </span>
-                  </div>
-                </div>
               </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div style={{ textAlign: 'right' }}>
-                  <div className="text-muted" style={{ fontSize: 11 }}>
-                    Entry Cost
-                  </div>
-                  <GemAmount value={room.cost} iconSize={15} />
-                </div>
-
-                {room.status === 'finished' || (isFull && !userIn) ? (
-                  <Link to={`/battles/${room.id}`} className="btn btn-outline">
-                    {room.status === 'finished' ? 'Results' : 'Watch'}
-                  </Link>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => handleJoin(room)}
-                  >
-                    {userIn ? 'Enter Room' : `Join (${formatGems(room.cost)})`}
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       <Modal
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={creating ? undefined : () => setCreateOpen(false)}
         title="Create Case Battle"
         maxWidth={660}
       >
@@ -340,10 +513,12 @@ export function Battles() {
           <button
             type="button"
             className="btn btn-lg btn-green"
-            disabled={selectedCrates.length === 0}
+            disabled={creating || selectedCrates.length === 0}
             onClick={handleCreate}
           >
-            Create {mode} Battle for {formatGems(totalCost)}
+            {creating
+              ? 'Creating Battle…'
+              : `Create ${mode} Battle for ${formatGems(totalCost)}`}
           </button>
         </div>
       </Modal>

@@ -17,9 +17,31 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SESSION_TTL_SEC = Math.floor(SESSION_TTL_MS / 1000);
 const SESSION_COOKIE = 'pf99_session';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'petflip99-hmac-session-secret-v1';
+const RECOVERY_KEY = crypto.createHash('sha256').update(`${SESSION_SECRET}:recovery-v1`).digest();
 const INITIAL_ADMIN_BALANCE = 100_000_000;
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 const PROMO_RE = /^[A-Z0-9_-]{3,24}$/;
+const PS99_DATA_PATH = path.join(ROOT_DIR, 'src', 'data', 'ps99.json');
+const PS99_CRATES = JSON.parse(fs.readFileSync(PS99_DATA_PATH, 'utf8')).crates || [];
+const CRATES_BY_ID = new Map(PS99_CRATES.map((c) => [c.id, c]));
+const BATTLE_BOT_NAMES = [
+  'xX_PetLord_Xx',
+  'HugeHunter2019',
+  'DiamondDaddy',
+  'TitanicChaser',
+  'PrestonFan_99',
+  'AxolotlKing',
+  'BloxxLuck',
+  'GemHoarderYT',
+  'NeonDragon77',
+  'RainbowCat_OP',
+  'LuckyFloppa',
+  'GargantuanEnjoyer',
+  'CosmicEggSpin',
+  'TradePlazaVIP',
+  'DominusCollector',
+  'PixelPetMaster',
+];
 
 function formatGemsServer(n) {
   const abs = Math.abs(Number(n) || 0);
@@ -29,6 +51,44 @@ function formatGemsServer(n) {
     }
   }
   return Math.round(abs).toLocaleString('en-US');
+}
+
+function getEffectiveCratePriceServer(crate, config) {
+  if (!crate) return 0;
+  const override = config?.cratePriceOverrides?.[crate.id];
+  const base = Number.isFinite(override) && override > 0 ? override : crate.price;
+  const discountPct = Math.min(50, Math.max(0, Number(config?.crateDiscountPct) || 0));
+  return Math.max(1_000, Math.round(base * (1 - discountPct / 100)));
+}
+
+function weightedPickServer(items) {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  let total = 0;
+  for (const it of items) {
+    total += Math.max(0, Number(it.chance) || 0);
+  }
+  const u = crypto.randomBytes(4).readUInt32BE(0) / 0x100000000;
+  let r = u * total;
+  let chosen = items[items.length - 1];
+  for (const it of items) {
+    r -= Math.max(0, Number(it.chance) || 0);
+    if (r <= 0) {
+      chosen = it;
+      break;
+    }
+  }
+  return {
+    name: chosen.name,
+    thumb: chosen.thumb,
+    value: chosen.value,
+    tier: chosen.tier,
+  };
+}
+
+function pickBotName(existingNamesSet) {
+  const pool = BATTLE_BOT_NAMES.filter((n) => !existingNamesSet.has(n));
+  const src = pool.length > 0 ? pool : BATTLE_BOT_NAMES;
+  return src[crypto.randomInt(0, src.length)];
 }
 
 const MIME_TYPES = {
@@ -158,6 +218,9 @@ function loadOrCreateDb() {
   if (!db.sessions || typeof db.sessions !== 'object') db.sessions = {};
   if (!db.revokedTokens || typeof db.revokedTokens !== 'object') db.revokedTokens = {};
   if (!db.promoCodes || typeof db.promoCodes !== 'object') db.promoCodes = {};
+  if (!Array.isArray(db.battles)) db.battles = [];
+  if (!db.restoredUsers || typeof db.restoredUsers !== 'object') db.restoredUsers = {};
+  if (!db.preservedProfiles || typeof db.preservedProfiles !== 'object') db.preservedProfiles = {};
   if (!Array.isArray(db.chat)) db.chat = [];
   if (!Array.isArray(db.drops)) db.drops = [];
   db.siteConfig = {
@@ -214,8 +277,9 @@ function logAudit(adminUser, action) {
   db.siteConfig.auditLog = [entry, ...(db.siteConfig.auditLog || [])].slice(0, 100);
 }
 
-function bumpAdminRevision(acc) {
+function bumpAdminRevision(acc, reason = 'admin') {
   acc.adminRevision = (Number(acc.adminRevision) || 1) + 1;
+  acc.lastRevReason = reason;
 }
 
 function signTokenPayload(payload) {
@@ -451,16 +515,281 @@ function buildPromoBroadcastText(promo) {
   return `PROMO CODE "${promo.code}" for +${formatGemsServer(promo.gems)} Gems${reqStr} — Redeem in Rewards!`;
 }
 
+function findValidSignedToken(req) {
+  for (const token of getCandidateTokens(req)) {
+    if (db.revokedTokens?.[token]) continue;
+    const signed = verifySignedToken(token);
+    if (signed) {
+      return { token, ...signed };
+    }
+  }
+  return null;
+}
+
+function isFreshSeededAdmin() {
+  const adm = db.accounts?.admin;
+  if (!adm || db.restoredUsers?.admin) return false;
+  return (
+    (adm.lastLoginAt || 0) === 0 &&
+    (adm.data?.stats?.bets || 0) === 0 &&
+    (Number(adm.adminRevision) || 1) === 1 &&
+    (adm.data?.balance ?? 0) === INITIAL_ADMIN_BALANCE
+  );
+}
+
+function encryptRecoveryBlob(userKey, acc) {
+  if (!userKey || !acc) return null;
+  const payload = JSON.stringify({
+    v: 1,
+    userKey,
+    username: acc.username,
+    passwordHash: acc.passwordHash,
+    salt: acc.salt,
+    role: acc.role === 'admin' ? 'admin' : 'user',
+    banned: Boolean(acc.banned),
+    banReason: String(acc.banReason || ''),
+    adminRevision: Number(acc.adminRevision) || 1,
+    tokenVersion: Number(acc.tokenVersion) || 1,
+    createdAt: acc.createdAt || Date.now(),
+    data: acc.data || createDefaultAccountData(0),
+  });
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', RECOVERY_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${iv.toString('hex')}.${tag.toString('hex')}.${encrypted.toString('hex')}`;
+}
+
+function decryptRecoveryBlob(blob) {
+  try {
+    const parts = String(blob || '').split('.');
+    if (parts.length !== 3) return null;
+    const [ivHex, tagHex, ctHex] = parts;
+    const iv = Buffer.from(ivHex, 'hex');
+    const tag = Buffer.from(tagHex, 'hex');
+    const ct = Buffer.from(ctHex, 'hex');
+    if (iv.length !== 12 || tag.length !== 16 || ct.length === 0) return null;
+    const decipher = crypto.createDecipheriv('aes-256-gcm', RECOVERY_KEY, iv);
+    decipher.setAuthTag(tag);
+    const jsonStr = Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8');
+    const parsed = JSON.parse(jsonStr);
+    if (!parsed || parsed.v !== 1 || !parsed.userKey || !parsed.username || !parsed.data) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function startBattleServer(battle) {
+  if (!battle || battle.status !== 'waiting') return;
+  const roundResults = battle.crateIds.map((crateId) => {
+    const crate = CRATES_BY_ID.get(crateId);
+    return battle.players.map(() => weightedPickServer(crate?.items || []));
+  });
+
+  battle.players = battle.players.map((p, seatIdx) => {
+    if (!p) return p;
+    const pulls = roundResults.map((r) => r[seatIdx]).filter(Boolean);
+    const total = pulls.reduce((s, it) => s + (Number(it.value) || 0), 0);
+    return {
+      ...p,
+      pulls,
+      total,
+    };
+  });
+
+  let best = -1;
+  let tiedSeats = [];
+  battle.players.forEach((p, idx) => {
+    if (!p) return;
+    if (p.total > best) {
+      best = p.total;
+      tiedSeats = [idx];
+    } else if (p.total === best) {
+      tiedSeats.push(idx);
+    }
+  });
+  battle.winnerSeat =
+    tiedSeats.length > 0 ? tiedSeats[crypto.randomInt(0, tiedSeats.length)] : null;
+  battle.totalPot = battle.players.reduce((s, p) => s + (p?.total || 0), 0);
+  battle.status = 'playing';
+  battle.startedAt = Date.now();
+  battle.rewardSettled = false;
+}
+
+function settleBattleServer(battle) {
+  if (!battle || battle.rewardSettled || battle.status === 'waiting') return false;
+  battle.rewardSettled = true;
+  battle.status = 'finished';
+  battle.finishedAt = Date.now();
+
+  const allPulled = battle.players.flatMap((p) => p?.pulls || []);
+  const bestPet =
+    allPulled.length > 0
+      ? [...allPulled].sort((a, b) => (b.value || 0) - (a.value || 0))[0]
+      : null;
+  const refCrate = CRATES_BY_ID.get(battle.crateIds?.[0]);
+  const now = Date.now();
+
+  for (const p of battle.players) {
+    if (!p || p.isBot || !p.userKey) continue;
+    const acc = db.accounts[p.userKey];
+    if (!acc) continue;
+    if (!acc.data) acc.data = createDefaultAccountData(0);
+
+    if (p.seat === battle.winnerSeat) {
+      const stamped = allPulled.map((pet) => ({
+        uid: `${now}-${Math.random().toString(36).slice(2, 9)}`,
+        name: pet.name,
+        thumb: pet.thumb,
+        value: pet.value,
+        tier: pet.tier,
+        from: `Battle (${battle.mode})`,
+      }));
+      acc.data.inventory = [...stamped, ...(acc.data.inventory || [])].slice(0, 500);
+      const mult = Number((battle.totalPot / Math.max(1, battle.cost)).toFixed(2));
+      const entry = {
+        id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
+        game: 'Battles',
+        amount: battle.cost,
+        multiplier: mult,
+        payout: battle.totalPot,
+        time: now,
+      };
+      acc.data.history = [entry, ...(acc.data.history || [])].slice(0, 200);
+      acc.data.xp = (Number(acc.data.xp) || 0) + battle.cost / 100_000;
+      const st = acc.data.stats || createDefaultAccountData(0).stats;
+      acc.data.stats = {
+        wagered: (st.wagered || 0) + battle.cost,
+        profit: (st.profit || 0) + (battle.totalPot - battle.cost),
+        bets: (st.bets || 0) + 1,
+        wins: (st.wins || 0) + 1,
+        biggestWin: Math.max(st.biggestWin || 0, battle.totalPot),
+      };
+      if (bestPet && refCrate) {
+        const drop = {
+          id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+          user: acc.username,
+          name: bestPet.name,
+          thumb: bestPet.thumb,
+          value: Math.max(0, Math.round(Number(bestPet.value) || 0)),
+          tier: bestPet.tier || 'normal',
+          crateId: refCrate.id,
+          crateName: refCrate.name,
+          isUser: false,
+          isReal: true,
+          time: now,
+        };
+        db.drops = [drop, ...db.drops].slice(0, 24);
+      }
+    } else {
+      const entry = {
+        id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
+        game: 'Battles',
+        amount: battle.cost,
+        multiplier: 0,
+        payout: 0,
+        time: now,
+      };
+      acc.data.history = [entry, ...(acc.data.history || [])].slice(0, 200);
+      acc.data.xp = (Number(acc.data.xp) || 0) + battle.cost / 100_000;
+      const st = acc.data.stats || createDefaultAccountData(0).stats;
+      acc.data.stats = {
+        wagered: (st.wagered || 0) + battle.cost,
+        profit: (st.profit || 0) - battle.cost,
+        bets: (st.bets || 0) + 1,
+        wins: st.wins || 0,
+        biggestWin: st.biggestWin || 0,
+      };
+    }
+    bumpAdminRevision(acc, 'battle');
+  }
+
+  return true;
+}
+
+function settleDueBattles() {
+  let dirty = false;
+  const now = Date.now();
+  for (const battle of db.battles) {
+    if (battle?.status === 'playing' && !battle.rewardSettled && battle.startedAt) {
+      const dueMs = (battle.crateIds?.length || 1) * 7000 + 3000;
+      if (now - battle.startedAt >= dueMs) {
+        if (settleBattleServer(battle)) {
+          dirty = true;
+        }
+      }
+    }
+  }
+  if (dirty) saveDb();
+}
+
+function listBattles() {
+  const active = db.battles.filter((b) => b && b.status !== 'finished');
+  const finished = db.battles
+    .filter((b) => b && b.status === 'finished')
+    .sort((a, b) => (b.finishedAt || b.createdAt || 0) - (a.finishedAt || a.createdAt || 0))
+    .slice(0, 20);
+  db.battles = [...active, ...finished].slice(0, 30);
+  return db.battles;
+}
+
 async function handleApi(req, res, pathname) {
   if (req.method === 'GET' && pathname === '/api/health') {
     return sendJson(res, 200, { ok: true });
   }
 
-  const session = getSessionAccount(req);
-  const me = session?.account || null;
-  const isAdmin = me?.role === 'admin';
+  let session = getSessionAccount(req);
+  let me = session?.account || null;
+  let isAdmin = me?.role === 'admin';
 
   if (req.method === 'GET' && pathname === '/api/state') {
+    settleDueBattles();
+
+    if (!session) {
+      const signed = findValidSignedToken(req);
+      if (signed && !db.accounts[signed.userKey] && db.preservedProfiles?.[signed.userKey]) {
+        const prof = db.preservedProfiles[signed.userKey];
+        const randomSalt = crypto.randomBytes(16).toString('hex');
+        const randomPassHash = hashPasswordScrypt(crypto.randomBytes(24).toString('hex'), randomSalt);
+        db.accounts[signed.userKey] = {
+          username: prof.username,
+          passwordHash: prof.passwordHash || randomPassHash,
+          salt: prof.salt || randomSalt,
+          role: prof.role === 'admin' ? 'admin' : 'user',
+          banned: Boolean(prof.banned),
+          banReason: String(prof.banReason || ''),
+          adminRevision: Number(prof.adminRevision) || 1,
+          tokenVersion: signed.tokenVersion,
+          createdAt: prof.createdAt || Date.now(),
+          lastLoginAt: Date.now(),
+          passwordRestored: !prof.passwordHash,
+          data: sanitizeSyncData(prof.data, createDefaultAccountData(0)),
+        };
+        delete db.preservedProfiles[signed.userKey];
+        db.restoredUsers[signed.userKey] = true;
+        saveDb();
+        session = getSessionAccount(req);
+        me = session?.account || null;
+        isAdmin = me?.role === 'admin';
+      }
+    }
+
+    let needsRecovery = false;
+    let recoverUserKey = null;
+    if (session && session.userKey === 'admin' && isFreshSeededAdmin()) {
+      needsRecovery = true;
+      recoverUserKey = 'admin';
+    } else if (!session) {
+      const signed = findValidSignedToken(req);
+      if (signed && !db.accounts[signed.userKey]) {
+        needsRecovery = true;
+        recoverUserKey = signed.userKey;
+      }
+    }
+
     const cid = String(req.headers['x-client-id'] || '');
     const now = Date.now();
     if (cid) activeClients.set(cid, now);
@@ -476,9 +805,13 @@ async function handleApi(req, res, pathname) {
       userKey: session?.userKey || null,
       chat: db.chat.slice(-50),
       drops: db.drops.slice(0, 24),
+      battles: listBattles(),
       accounts: isAdmin ? sanitizeAccountsMap(db.accounts) : null,
       promoCodes: isAdmin ? listPromoCodes() : null,
       onlineClients: activeClients.size,
+      needsRecovery,
+      recoverUserKey,
+      recoveryBlob: session && !needsRecovery ? encryptRecoveryBlob(session.userKey, me) : null,
     });
   }
 
@@ -524,19 +857,25 @@ async function handleApi(req, res, pathname) {
     const salt = crypto.randomBytes(16).toString('hex');
     const passwordHash = hashPasswordScrypt(pass, salt);
     const now = Date.now();
+    const preserved = db.preservedProfiles?.[key];
+    const initialData = preserved?.data
+      ? sanitizeSyncData(preserved.data, createDefaultAccountData(0))
+      : createDefaultAccountData(db.siteConfig.startingBalance ?? 500_000);
     const account = {
       username: rawName,
       passwordHash,
       salt,
-      role: 'user',
-      banned: false,
-      banReason: '',
-      adminRevision: 1,
-      createdAt: now,
+      role: preserved?.role === 'admin' ? 'admin' : 'user',
+      banned: Boolean(preserved?.banned),
+      banReason: String(preserved?.banReason || ''),
+      adminRevision: Number(preserved?.adminRevision) || 1,
+      createdAt: preserved?.createdAt || now,
       lastLoginAt: now,
-      data: createDefaultAccountData(db.siteConfig.startingBalance ?? 500_000),
+      data: initialData,
     };
+    if (preserved) delete db.preservedProfiles[key];
     db.accounts[key] = account;
+    db.restoredUsers[key] = true;
     const token = createSession(key);
     saveDb();
 
@@ -548,7 +887,8 @@ async function handleApi(req, res, pathname) {
         token,
         userKey: key,
         account: sanitizeAccount(account),
-        siteConfig: sanitizeSiteConfig(db.siteConfig, false),
+        siteConfig: sanitizeSiteConfig(db.siteConfig, account.role === 'admin'),
+        recoveryBlob: encryptRecoveryBlob(key, account),
       },
       { 'Set-Cookie': buildSessionCookie(req, token, SESSION_TTL_SEC) }
     );
@@ -570,6 +910,7 @@ async function handleApi(req, res, pathname) {
     }
 
     account.lastLoginAt = Date.now();
+    db.restoredUsers[key] = true;
     const token = createSession(key);
     saveDb();
 
@@ -585,6 +926,7 @@ async function handleApi(req, res, pathname) {
         siteConfig: sanitizeSiteConfig(db.siteConfig, accIsAdmin),
         accounts: accIsAdmin ? sanitizeAccountsMap(db.accounts) : null,
         promoCodes: accIsAdmin ? listPromoCodes() : null,
+        recoveryBlob: encryptRecoveryBlob(key, account),
       },
       { 'Set-Cookie': buildSessionCookie(req, token, SESSION_TTL_SEC) }
     );
@@ -605,6 +947,83 @@ async function handleApi(req, res, pathname) {
       200,
       { ok: true },
       { 'Set-Cookie': buildSessionCookie(req, '', 0) }
+    );
+  }
+
+  if (pathname === '/api/auth/recover') {
+    const signed = findValidSignedToken(req);
+    if (!signed) {
+      return sendJson(res, 401, { ok: false, error: 'Valid session token required.' });
+    }
+    const recovered = decryptRecoveryBlob(body.recoveryBlob);
+    if (
+      !recovered ||
+      recovered.userKey !== signed.userKey ||
+      (Number(recovered.tokenVersion) || 1) !== signed.tokenVersion
+    ) {
+      return sendJson(res, 400, { ok: false, error: 'Invalid recovery backup.' });
+    }
+
+    const existing = db.accounts[signed.userKey];
+    const shouldReplaceSeededAdmin = signed.userKey === 'admin' && isFreshSeededAdmin();
+    if (existing && !shouldReplaceSeededAdmin) {
+      const exIsAdmin = existing.role === 'admin';
+      return sendJson(res, 200, {
+        ok: true,
+        alreadyPresent: true,
+        hadToken: true,
+        siteConfig: sanitizeSiteConfig(db.siteConfig, exIsAdmin),
+        me: sanitizeAccount(existing),
+        userKey: signed.userKey,
+        chat: db.chat.slice(-50),
+        drops: db.drops.slice(0, 24),
+        battles: listBattles(),
+        accounts: exIsAdmin ? sanitizeAccountsMap(db.accounts) : null,
+        promoCodes: exIsAdmin ? listPromoCodes() : null,
+        onlineClients: activeClients.size,
+        recoveryBlob: encryptRecoveryBlob(signed.userKey, existing),
+      });
+    }
+
+    const restored = {
+      username: recovered.username,
+      passwordHash: recovered.passwordHash,
+      salt: recovered.salt,
+      role: recovered.role === 'admin' ? 'admin' : 'user',
+      banned: Boolean(recovered.banned),
+      banReason: String(recovered.banReason || ''),
+      adminRevision: Number(recovered.adminRevision) || 1,
+      tokenVersion: Number(recovered.tokenVersion) || 1,
+      createdAt: recovered.createdAt || Date.now(),
+      lastLoginAt: Date.now(),
+      data: sanitizeSyncData(recovered.data, createDefaultAccountData(0)),
+    };
+    db.accounts[signed.userKey] = restored;
+    if (db.preservedProfiles?.[signed.userKey]) delete db.preservedProfiles[signed.userKey];
+    db.restoredUsers[signed.userKey] = true;
+    saveDb();
+
+    const recIsAdmin = restored.role === 'admin';
+    const freshToken = createSession(signed.userKey);
+    return sendJson(
+      res,
+      200,
+      {
+        ok: true,
+        recovered: true,
+        hadToken: true,
+        siteConfig: sanitizeSiteConfig(db.siteConfig, recIsAdmin),
+        me: sanitizeAccount(restored),
+        userKey: signed.userKey,
+        chat: db.chat.slice(-50),
+        drops: db.drops.slice(0, 24),
+        battles: listBattles(),
+        accounts: recIsAdmin ? sanitizeAccountsMap(db.accounts) : null,
+        promoCodes: recIsAdmin ? listPromoCodes() : null,
+        onlineClients: activeClients.size,
+        recoveryBlob: encryptRecoveryBlob(signed.userKey, restored),
+      },
+      { 'Set-Cookie': buildSessionCookie(req, freshToken, SESSION_TTL_SEC) }
     );
   }
 
@@ -636,6 +1055,7 @@ async function handleApi(req, res, pathname) {
         ok: false,
         stale: true,
         account: sanitizeAccount(me),
+        recoveryBlob: encryptRecoveryBlob(session.userKey, me),
       });
     }
     me.data = sanitizeSyncData(body.data, me.data);
@@ -643,17 +1063,19 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, {
       ok: true,
       adminRevision: me.adminRevision,
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
     });
   }
 
   if (pathname === '/api/account/reset') {
     const startBal = isAdmin ? INITIAL_ADMIN_BALANCE : (db.siteConfig.startingBalance ?? 500_000);
     me.data = createDefaultAccountData(startBal);
-    bumpAdminRevision(me);
+    bumpAdminRevision(me, 'reset');
     saveDb();
     return sendJson(res, 200, {
       ok: true,
       account: sanitizeAccount(me),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
     });
   }
 
@@ -739,7 +1161,7 @@ async function handleApi(req, res, pathname) {
     me.data.balance = Math.max(0, (me.data.balance || 0) + promo.gems);
     promo.uses = (promo.uses || 0) + 1;
     promo.claimedBy = [...(promo.claimedBy || []), session.userKey];
-    bumpAdminRevision(me);
+    bumpAdminRevision(me, 'promo');
     saveDb();
 
     return sendJson(res, 200, {
@@ -747,6 +1169,275 @@ async function handleApi(req, res, pathname) {
       code: promo.code,
       gems: promo.gems,
       account: sanitizeAccount(me),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
+    });
+  }
+
+  // Case Battles routes
+  if (pathname === '/api/battles/create') {
+    settleDueBattles();
+    if (db.siteConfig.maintenanceMode && !isAdmin) {
+      return sendJson(res, 403, { ok: false, error: 'Site is in Maintenance Mode.' });
+    }
+    const rawMode = String(body.mode || '1v1');
+    const seatsMap = { '1v1': 2, '1v1v1': 3, '1v1v1v1': 4 };
+    const seatsCount = seatsMap[rawMode];
+    if (!seatsCount) {
+      return sendJson(res, 400, { ok: false, error: 'Invalid battle mode.' });
+    }
+    const crateIds = Array.isArray(body.crateIds) ? body.crateIds.map((id) => String(id)) : [];
+    if (crateIds.length < 1 || crateIds.length > 10) {
+      return sendJson(res, 400, { ok: false, error: 'Pick 1 to 10 crates.' });
+    }
+    const crates = crateIds.map((id) => CRATES_BY_ID.get(id)).filter(Boolean);
+    if (crates.length !== crateIds.length) {
+      return sendJson(res, 400, { ok: false, error: 'One or more selected crates are invalid.' });
+    }
+    const cost = crates.reduce((sum, c) => sum + getEffectiveCratePriceServer(c, db.siteConfig), 0);
+    if (cost <= 0 || (me.data?.balance || 0) < cost) {
+      return sendJson(res, 400, { ok: false, error: 'Insufficient gems to create this battle.' });
+    }
+
+    if (!me.data) me.data = createDefaultAccountData(0);
+    me.data.balance = Math.max(0, (me.data.balance || 0) - cost);
+    bumpAdminRevision(me, 'battle');
+
+    const battle = {
+      id: `battle-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      mode: rawMode,
+      seatsCount,
+      crateIds,
+      cost,
+      creatorKey: session.userKey,
+      creatorName: me.username,
+      players: Array.from({ length: seatsCount }, (_, idx) =>
+        idx === 0
+          ? {
+              seat: 0,
+              userKey: session.userKey,
+              name: me.username,
+              isBot: false,
+              hue: 190,
+              pulls: [],
+              total: 0,
+            }
+          : null
+      ),
+      status: 'waiting',
+      winnerSeat: null,
+      totalPot: 0,
+      rewardSettled: false,
+      createdAt: Date.now(),
+    };
+    db.battles.unshift(battle);
+    saveDb();
+
+    return sendJson(res, 200, {
+      ok: true,
+      battle,
+      battles: listBattles(),
+      account: sanitizeAccount(me),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
+    });
+  }
+
+  if (pathname === '/api/battles/join') {
+    settleDueBattles();
+    if (db.siteConfig.maintenanceMode && !isAdmin) {
+      return sendJson(res, 403, { ok: false, error: 'Site is in Maintenance Mode.' });
+    }
+    const battle = db.battles.find((b) => b.id === body.battleId);
+    if (!battle) {
+      return sendJson(res, 404, { ok: false, error: 'Battle room not found.' });
+    }
+    if (battle.status !== 'waiting') {
+      return sendJson(res, 400, { ok: false, error: 'This battle has already started or finished.' });
+    }
+    if (battle.players.some((p) => p && !p.isBot && p.userKey === session.userKey)) {
+      return sendJson(res, 400, { ok: false, error: 'You are already seated in this battle.' });
+    }
+
+    const reqSeat = Number(body.seatIdx);
+    const targetIdx =
+      Number.isInteger(reqSeat) &&
+      reqSeat >= 0 &&
+      reqSeat < battle.seatsCount &&
+      battle.players[reqSeat] === null
+        ? reqSeat
+        : battle.players.findIndex((p) => p === null);
+    if (targetIdx === -1) {
+      return sendJson(res, 400, { ok: false, error: 'Battle room is already full.' });
+    }
+    if ((me.data?.balance || 0) < battle.cost) {
+      return sendJson(res, 400, { ok: false, error: 'Insufficient gems to join this battle.' });
+    }
+
+    if (!me.data) me.data = createDefaultAccountData(0);
+    me.data.balance = Math.max(0, (me.data.balance || 0) - battle.cost);
+    bumpAdminRevision(me, 'battle');
+
+    battle.players[targetIdx] = {
+      seat: targetIdx,
+      userKey: session.userKey,
+      name: me.username,
+      isBot: false,
+      hue: (205 + targetIdx * 35) % 360,
+      pulls: [],
+      total: 0,
+    };
+
+    if (battle.players.every(Boolean)) {
+      startBattleServer(battle);
+    }
+    saveDb();
+
+    return sendJson(res, 200, {
+      ok: true,
+      battle,
+      battles: listBattles(),
+      account: sanitizeAccount(me),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
+    });
+  }
+
+  if (pathname === '/api/battles/call-bot') {
+    settleDueBattles();
+    const battle = db.battles.find((b) => b.id === body.battleId);
+    if (!battle) {
+      return sendJson(res, 404, { ok: false, error: 'Battle room not found.' });
+    }
+    if (battle.status !== 'waiting') {
+      return sendJson(res, 400, { ok: false, error: 'Battle has already started or finished.' });
+    }
+    if (battle.creatorKey !== session.userKey && !isAdmin) {
+      return sendJson(res, 403, { ok: false, error: 'Only the battle creator or an admin can call bots.' });
+    }
+
+    const usedNames = new Set(battle.players.filter(Boolean).map((p) => p.name));
+    if (body.fillAll) {
+      let added = 0;
+      for (let i = 0; i < battle.seatsCount; i++) {
+        if (battle.players[i] === null) {
+          const name = pickBotName(usedNames);
+          usedNames.add(name);
+          battle.players[i] = {
+            seat: i,
+            userKey: null,
+            name,
+            isBot: true,
+            hue: 180 + crypto.randomInt(0, 150),
+            pulls: [],
+            total: 0,
+          };
+          added++;
+        }
+      }
+      if (added === 0) {
+        return sendJson(res, 400, { ok: false, error: 'Battle room is already full.' });
+      }
+    } else {
+      const reqSeat = Number(body.seatIdx);
+      const targetIdx =
+        Number.isInteger(reqSeat) &&
+        reqSeat >= 0 &&
+        reqSeat < battle.seatsCount &&
+        battle.players[reqSeat] === null
+          ? reqSeat
+          : battle.players.findIndex((p) => p === null);
+      if (targetIdx === -1) {
+        return sendJson(res, 400, { ok: false, error: 'Battle room is already full.' });
+      }
+      const name = pickBotName(usedNames);
+      battle.players[targetIdx] = {
+        seat: targetIdx,
+        userKey: null,
+        name,
+        isBot: true,
+        hue: 180 + crypto.randomInt(0, 150),
+        pulls: [],
+        total: 0,
+      };
+    }
+
+    if (battle.players.every(Boolean)) {
+      startBattleServer(battle);
+    }
+    saveDb();
+
+    return sendJson(res, 200, {
+      ok: true,
+      battle,
+      battles: listBattles(),
+    });
+  }
+
+  if (pathname === '/api/battles/leave') {
+    settleDueBattles();
+    const battle = db.battles.find((b) => b.id === body.battleId);
+    if (!battle) {
+      return sendJson(res, 404, { ok: false, error: 'Battle room not found.' });
+    }
+    if (battle.status !== 'waiting') {
+      return sendJson(res, 400, { ok: false, error: 'Cannot leave after a battle has started.' });
+    }
+
+    if (battle.creatorKey === session.userKey || isAdmin) {
+      for (const p of battle.players) {
+        if (!p || p.isBot || !p.userKey) continue;
+        const acc = db.accounts[p.userKey];
+        if (acc) {
+          if (!acc.data) acc.data = createDefaultAccountData(0);
+          acc.data.balance = Math.max(0, (acc.data.balance || 0) + battle.cost);
+          bumpAdminRevision(acc, 'battle');
+        }
+      }
+      db.battles = db.battles.filter((b) => b.id !== battle.id);
+      saveDb();
+      return sendJson(res, 200, {
+        ok: true,
+        cancelled: true,
+        battles: listBattles(),
+        account: sanitizeAccount(me),
+        recoveryBlob: encryptRecoveryBlob(session.userKey, me),
+      });
+    }
+
+    const mySeat = battle.players.findIndex((p) => p && !p.isBot && p.userKey === session.userKey);
+    if (mySeat === -1) {
+      return sendJson(res, 400, { ok: false, error: 'You are not seated in this battle.' });
+    }
+    if (!me.data) me.data = createDefaultAccountData(0);
+    me.data.balance = Math.max(0, (me.data.balance || 0) + battle.cost);
+    bumpAdminRevision(me, 'battle');
+    battle.players[mySeat] = null;
+    saveDb();
+
+    return sendJson(res, 200, {
+      ok: true,
+      cancelled: false,
+      battle,
+      battles: listBattles(),
+      account: sanitizeAccount(me),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
+    });
+  }
+
+  if (pathname === '/api/battles/settle') {
+    const battle = db.battles.find((b) => b.id === body.battleId);
+    if (!battle) {
+      return sendJson(res, 404, { ok: false, error: 'Battle room not found.' });
+    }
+    if (battle.status === 'playing' && !battle.rewardSettled) {
+      settleBattleServer(battle);
+      saveDb();
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      battle,
+      battles: listBattles(),
+      drops: db.drops.slice(0, 24),
+      account: sanitizeAccount(me),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
     });
   }
 
@@ -1242,6 +1933,81 @@ async function handleApi(req, res, pathname) {
       ok: true,
       chat: db.chat,
       siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+    });
+  }
+
+  if (pathname === '/api/admin/restore-snapshot') {
+    if (body.accounts && typeof body.accounts === 'object') {
+      for (const [rawKey, entry] of Object.entries(body.accounts)) {
+        const key = normalizeKey(rawKey);
+        if (!key || !entry || !entry.data) continue;
+        if (key === 'admin') {
+          if (db.accounts.admin) {
+            db.accounts.admin.data = sanitizeSyncData(entry.data, db.accounts.admin.data);
+            db.accounts.admin.lastLoginAt = Date.now();
+            db.restoredUsers.admin = true;
+            bumpAdminRevision(db.accounts.admin, 'restore');
+          }
+          continue;
+        }
+        if (db.accounts[key]) {
+          db.accounts[key].data = sanitizeSyncData(entry.data, db.accounts[key].data);
+          bumpAdminRevision(db.accounts[key], 'restore');
+        } else if (entry.username) {
+          db.preservedProfiles[key] = {
+            username: String(entry.username).trim() || key,
+            role: entry.role === 'admin' ? 'admin' : 'user',
+            banned: Boolean(entry.banned),
+            banReason: String(entry.banReason || ''),
+            adminRevision: Number(entry.adminRevision) || 1,
+            createdAt: entry.createdAt || Date.now(),
+            data: sanitizeSyncData(entry.data, createDefaultAccountData(0)),
+          };
+        }
+      }
+    }
+
+    if (body.siteConfig && typeof body.siteConfig === 'object') {
+      const cfg = body.siteConfig;
+      if (cfg.startingBalance !== undefined) {
+        db.siteConfig.startingBalance = Math.max(0, Math.min(1e13, Math.round(Number(cfg.startingBalance) || 0)));
+      }
+      if (cfg.allowDeposits !== undefined) db.siteConfig.allowDeposits = Boolean(cfg.allowDeposits);
+      if (cfg.allowRegistration !== undefined) db.siteConfig.allowRegistration = Boolean(cfg.allowRegistration);
+      if (cfg.maintenanceMode !== undefined) db.siteConfig.maintenanceMode = Boolean(cfg.maintenanceMode);
+      if (cfg.chatEnabled !== undefined) db.siteConfig.chatEnabled = Boolean(cfg.chatEnabled);
+      if (cfg.botsEnabled !== undefined) db.siteConfig.botsEnabled = Boolean(cfg.botsEnabled);
+      if (cfg.banner && typeof cfg.banner === 'object') {
+        db.siteConfig.banner = {
+          text: String(cfg.banner.text || '').trim().slice(0, 180),
+          tone: ['info', 'gold', 'danger'].includes(cfg.banner.tone) ? cfg.banner.tone : 'info',
+        };
+      }
+      if (cfg.crateDiscountPct !== undefined) {
+        db.siteConfig.crateDiscountPct = Math.min(50, Math.max(0, Math.round(Number(cfg.crateDiscountPct) || 0)));
+      }
+      if (cfg.cratePriceOverrides && typeof cfg.cratePriceOverrides === 'object') {
+        db.siteConfig.cratePriceOverrides = { ...cfg.cratePriceOverrides };
+      }
+    }
+
+    if (Array.isArray(body.promoCodes)) {
+      for (const p of body.promoCodes) {
+        const cleanCode = String(p?.code || '').trim().toUpperCase();
+        if (!PROMO_RE.test(cleanCode)) continue;
+        db.promoCodes[cleanCode] = { ...p, code: cleanCode };
+      }
+    }
+
+    logAudit(me.username, 'Restored account balances and config snapshot');
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      accounts: sanitizeAccountsMap(db.accounts),
+      preservedKeys: Object.keys(db.preservedProfiles || {}),
+      siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+      promoCodes: listPromoCodes(),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
     });
   }
 

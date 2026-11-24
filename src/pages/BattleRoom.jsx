@@ -1,11 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Crown, Swords, Zap } from 'lucide-react';
+import { ArrowLeft, Bot, Crown, LogOut, Swords, UserPlus, Zap } from 'lucide-react';
 import { useBattles } from '../store/battles.js';
-import { useGame } from '../store/useGame.js';
+import { useAuth } from '../store/useAuth.js';
 import { useToast } from '../store/toast.js';
-import { useDrops } from '../store/drops.js';
 import { formatGems } from '../lib/format.js';
 import { sound } from '../lib/sound.js';
 import { fireConfetti } from '../lib/confetti.js';
@@ -16,137 +15,203 @@ import { GemAmount } from '../components/GemAmount.jsx';
 
 export function BattleRoom() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const room = useBattles((s) => s.rooms.find((r) => r.id === id));
-  const fillNextBotSeat = useBattles((s) => s.fillNextBotSeat);
-  const startRoom = useBattles((s) => s.startRoom);
-  const rollRoundOutcomes = useBattles((s) => s.rollRoundOutcomes);
-  const commitRound = useBattles((s) => s.commitRound);
-  const markSettled = useBattles((s) => s.markSettled);
+  const joinBattle = useBattles((s) => s.joinBattle);
+  const callBot = useBattles((s) => s.callBot);
+  const leaveBattle = useBattles((s) => s.leaveBattle);
+  const settleBattle = useBattles((s) => s.settleBattle);
 
-  const addItems = useGame((s) => s.addItems);
-  const recordBet = useGame((s) => s.recordBet);
+  const currentUserKey = useAuth((s) => s.currentUserKey);
+  const accounts = useAuth((s) => s.accounts);
+  const openAuthModal = useAuth((s) => s.openAuthModal);
   const pushToast = useToast((s) => s.push);
 
   const [fast, setFast] = useState(false);
-  const [roundWinners, setRoundWinners] = useState(null); // array of picked pets for active round
-  const [spinningRound, setSpinningRound] = useState(false);
+  const [revealedRounds, setRevealedRounds] = useState(0);
+  const [playbackRound, setPlaybackRound] = useState(0);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [activeRoundWinners, setActiveRoundWinners] = useState(null);
+  const [playbackDone, setPlaybackDone] = useState(false);
+  const [busyAction, setBusyAction] = useState('');
+
+  const initForIdRef = useRef(null);
   const doneSeatsRef = useRef(0);
-  const roundWinnersRef = useRef(null);
+  const celebratedIdRef = useRef(null);
+  const roomRef = useRef(room);
+  roomRef.current = room;
 
-  // Step 1: Fill empty bot seats gradually while waiting
+  // Reset local playback state when switching rooms
   useEffect(() => {
-    if (!room || room.status !== 'waiting') return;
-    const hasEmpty = room.players.some((p) => p === null);
-    if (!hasEmpty) {
-      const t = setTimeout(() => startRoom(room.id), 600);
-      return () => clearTimeout(t);
+    initForIdRef.current = null;
+    doneSeatsRef.current = 0;
+    celebratedIdRef.current = null;
+    setRevealedRounds(0);
+    setPlaybackRound(0);
+    setIsSpinning(false);
+    setActiveRoundWinners(null);
+    setPlaybackDone(false);
+    setBusyAction('');
+  }, [id]);
+
+  // If entering an already-finished battle, show completed results immediately
+  useEffect(() => {
+    if (!room || initForIdRef.current === room.id) return;
+    initForIdRef.current = room.id;
+    if (room.status === 'finished') {
+      const totalRounds = room.crates.length;
+      setRevealedRounds(totalRounds);
+      setPlaybackRound(Math.max(0, totalRounds - 1));
+      setPlaybackDone(true);
+      setIsSpinning(false);
+      setActiveRoundWinners(null);
+      celebratedIdRef.current = room.id;
     }
-    const t = setTimeout(() => {
-      sound.click();
-      fillNextBotSeat(room.id);
-    }, 900);
-    return () => clearTimeout(t);
-  }, [room, fillNextBotSeat, startRoom]);
+  }, [room]);
 
-  // Step 2: When ready, transition to spinning
+  // Trigger next round playback sequentially without being disrupted by 2s state polls
   useEffect(() => {
-    if (!room || room.status !== 'ready') return;
-    const t = setTimeout(() => startRoom(room.id), 650);
-    return () => clearTimeout(t);
-  }, [room, startRoom]);
+    if (!room) return;
+    if (room.status !== 'playing' && room.status !== 'finished') return;
+    if (playbackDone || isSpinning) return;
+    if (revealedRounds >= room.crates.length) return;
 
-  // Step 3: Trigger round spin whenever room.status === 'spinning' and not already spinning this round
-  useEffect(() => {
-    if (!room || room.status !== 'spinning' || spinningRound) return;
     const t = setTimeout(() => {
-      const outcomes = rollRoundOutcomes(room.id, room.currentRound);
+      const latest = roomRef.current;
+      if (!latest) return;
+      const locked = latest.players.map((p) => p?.pulls?.[revealedRounds] || null);
       doneSeatsRef.current = 0;
-      roundWinnersRef.current = { roundIdx: room.currentRound, outcomes };
-      setRoundWinners(outcomes);
-      setSpinningRound(true);
+      setPlaybackRound(revealedRounds);
+      setActiveRoundWinners(locked);
+      setIsSpinning(true);
     }, 350);
+
     return () => clearTimeout(t);
-  }, [room, spinningRound, rollRoundOutcomes]);
+  }, [room?.status, room?.crates?.length, playbackDone, isSpinning, revealedRounds]);
 
-  // Step 4: Settle finished battle once
-  useEffect(() => {
-    if (!room || room.status !== 'finished' || room.settled) return;
-    markSettled(room.id);
+  const handleSeatReelDone = async () => {
+    const curRoom = roomRef.current;
+    if (!curRoom || !isSpinning) return;
+    doneSeatsRef.current += 1;
+    if (doneSeatsRef.current !== curRoom.seatsCount) return;
 
-    const winnerPlayer = room.players[room.winnerSeat];
-    const userParticipating = room.players.some((p) => p?.isUser);
-    if (!userParticipating) return;
+    const nextRevealed = playbackRound + 1;
+    setIsSpinning(false);
+    setActiveRoundWinners(null);
+    setRevealedRounds(nextRevealed);
 
-    if (winnerPlayer?.isUser) {
-      const allPulled = room.players.flatMap((p) => p?.pulls || []);
-      const totalVal = allPulled.reduce((s, it) => s + it.value, 0);
-      addItems(
-        allPulled.map((pet) => ({
-          uid: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-          name: pet.name,
-          thumb: pet.thumb,
-          value: pet.value,
-          tier: pet.tier,
-          from: `Battle (${room.mode})`,
-        }))
-      );
-      if (allPulled.length > 0) {
-        const bestPet = [...allPulled].sort((a, b) => b.value - a.value)[0];
-        const refCrate = room.crates?.[0];
-        if (bestPet && refCrate) {
-          useDrops.getState().pushDrop({
-            user: useGame.getState().username,
-            name: bestPet.name,
-            thumb: bestPet.thumb,
-            value: bestPet.value,
-            tier: bestPet.tier,
-            crateId: refCrate.id,
-            crateName: refCrate.name,
-            isUser: true,
-          });
+    if (nextRevealed >= curRoom.crates.length) {
+      setPlaybackDone(true);
+      const settleRes = await settleBattle(curRoom.id);
+      const finalRoom = settleRes?.battle || roomRef.current || curRoom;
+      if (celebratedIdRef.current !== finalRoom.id) {
+        celebratedIdRef.current = finalRoom.id;
+        const mySeat = currentUserKey
+          ? finalRoom.players.findIndex((p) => p && !p.isBot && p.userKey === currentUserKey)
+          : -1;
+        if (mySeat !== -1) {
+          const winnerPlayer = finalRoom.players[finalRoom.winnerSeat];
+          if (finalRoom.winnerSeat === mySeat) {
+            const allPulled = finalRoom.players.flatMap((p) => p?.pulls || []);
+            const totalVal = allPulled.reduce((s, it) => s + (Number(it.value) || 0), 0);
+            sound.bigWin();
+            fireConfetti(true);
+            pushToast(
+              `VICTORY! Won ${allPulled.length} pets worth ${formatGems(totalVal)}!`,
+              'success'
+            );
+          } else {
+            sound.lose();
+            pushToast(`${winnerPlayer?.name || 'Opponent'} won the battle!`, 'error');
+          }
         }
       }
-      recordBet({
-        game: 'Battles',
-        amount: room.cost,
-        multiplier: totalVal / room.cost,
-        payout: totalVal,
-      });
-      sound.bigWin();
-      fireConfetti(true);
-      pushToast(
-        `VICTORY! Won ${allPulled.length} pets worth ${formatGems(totalVal)}!`,
-        'success'
-      );
-    } else {
-      recordBet({
-        game: 'Battles',
-        amount: room.cost,
-        multiplier: 0,
-        payout: 0,
-      });
-      sound.lose();
-      pushToast(`${winnerPlayer?.name || 'Bot'} won the battle!`, 'error');
     }
-  }, [room, markSettled, addItems, recordBet, pushToast]);
+  };
 
-  const handleSeatReelDone = () => {
-    if (!room || !roundWinnersRef.current) return;
-    doneSeatsRef.current += 1;
-    if (doneSeatsRef.current < room.seatsCount) return;
+  const handleJoinSeat = async (seatIdx) => {
+    if (!room || busyAction) return;
+    if (!currentUserKey) {
+      pushToast('Sign in or create an account to join this battle!', 'info');
+      openAuthModal('login');
+      return;
+    }
+    sound.click();
+    setBusyAction(`join-${seatIdx}`);
+    try {
+      const res = await joinBattle(room.id, seatIdx);
+      if (!res.ok) {
+        sound.lose();
+        pushToast(res.error || 'Could not join seat.', 'error');
+      } else {
+        pushToast(`Joined seat #${seatIdx + 1}!`, 'success');
+      }
+    } finally {
+      setBusyAction('');
+    }
+  };
 
-    const { roundIdx, outcomes } = roundWinnersRef.current;
-    roundWinnersRef.current = null;
-    setSpinningRound(false);
-    setRoundWinners(null);
-    commitRound(room.id, roundIdx, outcomes);
+  const handleCallBot = async (seatIdx) => {
+    if (!room || busyAction) return;
+    sound.click();
+    setBusyAction(`bot-${seatIdx}`);
+    try {
+      const res = await callBot(room.id, seatIdx, false);
+      if (!res.ok) {
+        sound.lose();
+        pushToast(res.error || 'Could not call bot.', 'error');
+      }
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleFillAllBots = async () => {
+    if (!room || busyAction) return;
+    sound.click();
+    setBusyAction('fill-bots');
+    try {
+      const res = await callBot(room.id, null, true);
+      if (!res.ok) {
+        sound.lose();
+        pushToast(res.error || 'Could not fill remaining slots.', 'error');
+      }
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleLeaveOrCancel = async () => {
+    if (!room || busyAction) return;
+    sound.click();
+    setBusyAction('leave');
+    try {
+      const res = await leaveBattle(room.id);
+      if (!res.ok) {
+        sound.lose();
+        pushToast(res.error || 'Could not leave battle.', 'error');
+        return;
+      }
+      pushToast(
+        res.cancelled
+          ? 'Battle cancelled — entry gems refunded.'
+          : 'Left battle — entry gems refunded.',
+        'info'
+      );
+      navigate('/battles');
+    } finally {
+      setBusyAction('');
+    }
   };
 
   if (!room) {
     return (
       <div className="card" style={{ padding: 30, textAlign: 'center' }}>
         <h2>Battle room not found</h2>
-        <p className="text-muted">Rooms are active only during your current session.</p>
+        <p className="text-muted">
+          This room may have been cancelled or cleared. Any entry gems from cancelled waiting
+          battles are refunded automatically.
+        </p>
         <Link to="/battles" className="btn btn-primary" style={{ marginTop: 12 }}>
           Back to Battles
         </Link>
@@ -154,15 +219,24 @@ export function BattleRoom() {
     );
   }
 
-  const activeCrate = room.crates[room.currentRound] || room.crates[room.crates.length - 1];
-  const totalPot = room.players.reduce((s, p) => s + (p?.total || 0), 0);
+  const isCreator = Boolean(currentUserKey && room.creatorKey === currentUserKey);
+  const isAdmin = Boolean(currentUserKey && accounts[currentUserKey]?.role === 'admin');
+  const canCallBots = isCreator || isAdmin;
+  const mySeatIdx = currentUserKey
+    ? room.players.findIndex((p) => p && !p.isBot && p.userKey === currentUserKey)
+    : -1;
+  const emptySeatsCount = room.players.filter((p) => p === null).length;
+
+  const activeCrate = room.crates[playbackRound] || room.crates[room.crates.length - 1];
+  const shownPot = room.players.reduce((sum, p) => {
+    if (!p) return sum;
+    const pulls = (p.pulls || []).slice(0, revealedRounds);
+    return sum + pulls.reduce((s, it) => s + (Number(it.value) || 0), 0);
+  }, 0);
 
   return (
     <div>
-      <div
-        className="page-header"
-        style={{ marginBottom: 16 }}
-      >
+      <div className="page-header" style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <Link to="/battles" className="btn btn-sm btn-ghost">
             <ArrowLeft size={15} /> Lobby
@@ -172,11 +246,43 @@ export function BattleRoom() {
             <span>{room.mode} Battle</span>
           </h1>
           <span className="game-tag">
-            Round {Math.min(room.currentRound + 1, room.crates.length)} / {room.crates.length}
+            {room.status === 'waiting'
+              ? `${room.seatsCount - emptySeatsCount}/${room.seatsCount} Players`
+              : `Round ${Math.min(playbackRound + 1, room.crates.length)} / ${room.crates.length}`}
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {room.status === 'waiting' && canCallBots && emptySeatsCount > 0 && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              disabled={Boolean(busyAction)}
+              onClick={handleFillAllBots}
+            >
+              <Bot size={14} /> {busyAction === 'fill-bots' ? 'Filling…' : 'Fill with Bots'}
+            </button>
+          )}
+          {room.status === 'waiting' && (canCallBots || mySeatIdx !== -1) && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              style={
+                canCallBots
+                  ? { color: 'var(--red)', borderColor: 'rgba(239, 68, 68, 0.35)' }
+                  : undefined
+              }
+              disabled={Boolean(busyAction)}
+              onClick={handleLeaveOrCancel}
+            >
+              <LogOut size={14} />{' '}
+              {busyAction === 'leave'
+                ? 'Refunding…'
+                : canCallBots
+                  ? 'Cancel & Refund'
+                  : 'Leave & Refund'}
+            </button>
+          )}
           <button
             type="button"
             className={`btn btn-sm ${fast ? 'btn-gold' : 'btn-outline'}`}
@@ -185,7 +291,7 @@ export function BattleRoom() {
             <Zap size={14} /> Fast
           </button>
           <div className="balance-pill" style={{ fontSize: 13.5 }}>
-            Pot: <GemAmount value={totalPot} iconSize={15} />
+            Pot: <GemAmount value={shownPot} iconSize={15} />
           </div>
         </div>
       </div>
@@ -203,8 +309,8 @@ export function BattleRoom() {
         }}
       >
         {room.crates.map((crate, idx) => {
-          const isCurr = room.status !== 'finished' && idx === room.currentRound;
-          const isPast = room.status === 'finished' || idx < room.currentRound;
+          const isCurr = room.status !== 'waiting' && !playbackDone && idx === playbackRound;
+          const isPast = playbackDone || idx < revealedRounds;
           return (
             <div
               key={idx}
@@ -221,9 +327,7 @@ export function BattleRoom() {
               }}
             >
               <PetImage thumb={crate.icon} alt={crate.name} size={28} lazy={false} />
-              <span style={{ fontSize: 12, fontWeight: 700 }}>
-                #{idx + 1}
-              </span>
+              <span style={{ fontSize: 12, fontWeight: 700 }}>#{idx + 1}</span>
             </div>
           );
         })}
@@ -239,9 +343,13 @@ export function BattleRoom() {
         }}
       >
         {room.players.map((player, seatIdx) => {
-          const isWinner = room.status === 'finished' && room.winnerSeat === seatIdx;
+          const isMe = Boolean(player && !player.isBot && currentUserKey && player.userKey === currentUserKey);
+          const isWinner = playbackDone && room.winnerSeat === seatIdx;
+          const visiblePulls =
+            room.status === 'waiting' ? [] : (player?.pulls || []).slice(0, revealedRounds);
+          const shownTotal = visiblePulls.reduce((s, it) => s + (Number(it.value) || 0), 0);
           const seatWinnerItem =
-            roundWinners?.[seatIdx] || activeCrate.items[activeCrate.items.length - 1];
+            activeRoundWinners?.[seatIdx] || activeCrate?.items?.[activeCrate.items.length - 1];
 
           return (
             <div
@@ -251,9 +359,9 @@ export function BattleRoom() {
                 padding: 14,
                 borderColor: isWinner
                   ? 'var(--gold)'
-                  : player?.isUser
-                  ? 'rgba(62,224,255,0.45)'
-                  : 'var(--border)',
+                  : isMe
+                    ? 'rgba(62,224,255,0.45)'
+                    : 'var(--border)',
                 boxShadow: isWinner ? '0 0 28px rgba(255,204,51,0.35)' : undefined,
                 display: 'flex',
                 flexDirection: 'column',
@@ -277,7 +385,7 @@ export function BattleRoom() {
                         width: 34,
                         height: 34,
                         borderRadius: 10,
-                        background: player.isUser
+                        background: isMe
                           ? 'linear-gradient(135deg, var(--gem), var(--purple))'
                           : `hsl(${player.hue}, 65%, 45%)`,
                         display: 'grid',
@@ -288,12 +396,20 @@ export function BattleRoom() {
                       {player.name[0]?.toUpperCase()}
                     </div>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: 14 }}>
-                        {player.name}{' '}
-                        {player.isUser && <span className="you-tag">YOU</span>}
+                      <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                        <span>{player.name}</span>
+                        {isMe && <span className="you-tag">YOU</span>}
+                        {player.isBot && (
+                          <span
+                            className="game-tag"
+                            style={{ fontSize: 10, padding: '1px 6px', opacity: 0.85 }}
+                          >
+                            BOT
+                          </span>
+                        )}
                       </div>
                       <div className="text-gem" style={{ fontSize: 13 }}>
-                        <GemAmount value={player.total} iconSize={13} />
+                        <GemAmount value={shownTotal} iconSize={13} />
                       </div>
                     </div>
                   </div>
@@ -315,29 +431,74 @@ export function BattleRoom() {
               ) : (
                 <div
                   style={{
-                    height: 44,
-                    display: 'grid',
-                    placeItems: 'center',
-                    color: 'var(--text-muted)',
-                    fontSize: 13,
-                    fontWeight: 700,
+                    minHeight: 112,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    padding: 12,
+                    borderRadius: 12,
+                    background: 'var(--bg-deep)',
+                    border: '1px dashed var(--border-light)',
+                    textAlign: 'center',
                   }}
                 >
-                  Waiting for player…
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>Open Seat #{seatIdx + 1}</div>
+                  <div className="text-muted" style={{ fontSize: 12 }}>
+                    Waiting for real player…
+                  </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      flexWrap: 'wrap',
+                      justifyContent: 'center',
+                      marginTop: 2,
+                    }}
+                  >
+                    {mySeatIdx === -1 && room.status === 'waiting' && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={Boolean(busyAction)}
+                        onClick={() => handleJoinSeat(seatIdx)}
+                      >
+                        <UserPlus size={14} />{' '}
+                        {busyAction === `join-${seatIdx}`
+                          ? 'Joining…'
+                          : `Join (${formatGems(room.cost)})`}
+                      </button>
+                    )}
+                    {canCallBots && room.status === 'waiting' && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline"
+                        disabled={Boolean(busyAction)}
+                        onClick={() => handleCallBot(seatIdx)}
+                      >
+                        <Bot size={14} />{' '}
+                        {busyAction === `bot-${seatIdx}` ? 'Calling…' : 'Call Bot'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {room.status === 'spinning' && activeCrate && (
-                <CaseReel
-                  key={`seat-${seatIdx}-round-${room.currentRound}`}
-                  items={activeCrate.items}
-                  winner={seatWinnerItem}
-                  spinning={spinningRound}
-                  fast={fast}
-                  compact
-                  onDone={handleSeatReelDone}
-                />
-              )}
+              {!playbackDone &&
+                (room.status === 'playing' || room.status === 'finished') &&
+                activeCrate &&
+                seatWinnerItem && (
+                  <CaseReel
+                    key={`seat-${seatIdx}-round-${playbackRound}`}
+                    items={activeCrate.items}
+                    winner={seatWinnerItem}
+                    spinning={isSpinning}
+                    fast={fast}
+                    compact
+                    onDone={handleSeatReelDone}
+                  />
+                )}
 
               <div
                 style={{
@@ -346,7 +507,7 @@ export function BattleRoom() {
                   gap: 8,
                 }}
               >
-                {(player?.pulls || []).map((pet, pIdx) => (
+                {visiblePulls.map((pet, pIdx) => (
                   <PetCard key={pIdx} pet={pet} compact />
                 ))}
               </div>

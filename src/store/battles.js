@@ -1,221 +1,109 @@
 import { create } from 'zustand';
 import ps99 from '../data/ps99.json';
-import { randomBotName } from '../lib/bots.js';
-import { randInt, weightedPick } from '../lib/rng.js';
-import { getEffectiveCratePrice, useSiteConfig } from './siteConfig.js';
+import { apiPost } from '../lib/api.js';
+import { useDrops } from './drops.js';
 
-const CRATES = ps99.crates;
+const CRATES_BY_ID = new Map((ps99.crates || []).map((c) => [c.id, c]));
 
-function pickLobbyCrates() {
-  const count = randInt(2, 4);
-  const chosen = [];
-  // Pick from affordable/mid crates (first 7) so lobby battles stay accessible
-  const pool = CRATES.slice(0, Math.min(CRATES.length, 7));
-  for (let i = 0; i < count; i++) {
-    chosen.push(pool[randInt(0, pool.length - 1)]);
-  }
-  return chosen;
+let battleBridge = null;
+
+export function setBattleBridge(bridge) {
+  battleBridge = bridge || null;
 }
 
-function makeBot(seat) {
+function hydrateBattle(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const crateIds = Array.isArray(raw.crateIds) ? raw.crateIds : [];
+  const crates = crateIds.map((id) => CRATES_BY_ID.get(id)).filter(Boolean);
   return {
-    seat,
-    name: randomBotName(),
-    isUser: false,
-    isBot: true,
-    hue: randInt(180, 330),
-    pulls: [],
-    total: 0,
-  };
-}
-
-function createBotRoom(index = 0) {
-  const modes = [
-    { mode: '1v1', seats: 2 },
-    { mode: '1v1v1', seats: 3 },
-    { mode: '1v1v1v1', seats: 4 },
-  ];
-  const picked = modes[index % modes.length];
-  const crates = pickLobbyCrates();
-  const cfg = useSiteConfig.getState();
-  const cost = crates.reduce((s, c) => s + getEffectiveCratePrice(c, cfg), 0);
-  const players = Array.from({ length: picked.seats }, (_, s) => (s === 0 ? makeBot(0) : null));
-  if (picked.seats > 2 && Math.random() < 0.5) {
-    players[1] = makeBot(1);
-  }
-  return {
-    id: `battle-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    mode: picked.mode,
-    seatsCount: picked.seats,
+    ...raw,
     crates,
-    cost,
-    players,
-    status: 'waiting',
-    currentRound: 0,
-    winnerSeat: null,
-    settled: false,
-    createdAt: Date.now(),
   };
+}
+
+async function flushBeforeMutation() {
+  if (typeof battleBridge?.flushBeforeBattle === 'function') {
+    await battleBridge.flushBeforeBattle();
+  }
 }
 
 export const useBattles = create((set, get) => ({
-  rooms: [createBotRoom(0), createBotRoom(1), createBotRoom(2), createBotRoom(0)],
+  rooms: [],
 
-  refreshLobby() {
-    set((state) => {
-      const activeUserRooms = state.rooms.filter(
-        (r) => r.players.some((p) => p?.isUser) && r.status !== 'finished'
-      );
-      const freshBots = [createBotRoom(0), createBotRoom(1), createBotRoom(2), createBotRoom(0)];
-      return { rooms: [...activeUserRooms, ...freshBots].slice(0, 8) };
+  syncServerBattles(serverBattles) {
+    if (!Array.isArray(serverBattles)) return;
+    set({
+      rooms: serverBattles.map(hydrateBattle).filter(Boolean),
     });
   },
 
-  createRoom({ mode, crates, username }) {
-    const seatsCount = mode === '1v1' ? 2 : mode === '1v1v1' ? 3 : 4;
-    const cfg = useSiteConfig.getState();
-    const cost = crates.reduce((s, c) => s + getEffectiveCratePrice(c, cfg), 0);
-    const id = `battle-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const players = Array.from({ length: seatsCount }, (_, idx) =>
-      idx === 0
-        ? {
-            seat: 0,
-            name: username,
-            isUser: true,
-            isBot: false,
-            hue: 190,
-            pulls: [],
-            total: 0,
-          }
-        : null
-    );
-    const room = {
-      id,
-      mode,
-      seatsCount,
-      crates,
-      cost,
-      players,
-      status: 'waiting',
-      currentRound: 0,
-      winnerSeat: null,
-      settled: false,
-      createdAt: Date.now(),
+  async createBattle({ mode, crateIds }) {
+    const account = battleBridge?.getCurrentAccount?.();
+    if (!account) {
+      battleBridge?.openAuthModal?.('login');
+      return { ok: false, error: 'Sign in or create an account to create a battle!' };
+    }
+    await flushBeforeMutation();
+    const res = await apiPost('/api/battles/create', { mode, crateIds });
+    if (res.ok) {
+      if (Array.isArray(res.battles)) get().syncServerBattles(res.battles);
+      if (res.account) battleBridge?.applyAccountFromServer?.(res);
+    }
+    return {
+      ...res,
+      battle: res.battle ? hydrateBattle(res.battle) : null,
     };
-    set((state) => ({
-      rooms: [room, ...state.rooms],
-    }));
-    return room;
   },
 
-  joinRoom(roomId, username) {
-    const room = get().rooms.find((r) => r.id === roomId);
-    if (!room) return false;
-    if (room.players.some((p) => p?.isUser)) return true;
-    const emptyIdx = room.players.findIndex((p) => p === null);
-    if (emptyIdx === -1) return false;
-
-    set((state) => ({
-      rooms: state.rooms.map((r) => {
-        if (r.id !== roomId) return r;
-        const nextPlayers = [...r.players];
-        nextPlayers[emptyIdx] = {
-          seat: emptyIdx,
-          name: username,
-          isUser: true,
-          isBot: false,
-          hue: 190,
-          pulls: [],
-          total: 0,
-        };
-        return { ...r, players: nextPlayers };
-      }),
-    }));
-    return true;
+  async joinBattle(battleId, seatIdx = null) {
+    const account = battleBridge?.getCurrentAccount?.();
+    if (!account) {
+      battleBridge?.openAuthModal?.('login');
+      return { ok: false, error: 'Sign in or create an account to join this battle!' };
+    }
+    await flushBeforeMutation();
+    const res = await apiPost('/api/battles/join', { battleId, seatIdx });
+    if (res.ok) {
+      if (Array.isArray(res.battles)) get().syncServerBattles(res.battles);
+      if (res.account) battleBridge?.applyAccountFromServer?.(res);
+    }
+    return {
+      ...res,
+      battle: res.battle ? hydrateBattle(res.battle) : null,
+    };
   },
 
-  fillNextBotSeat(roomId) {
-    set((state) => ({
-      rooms: state.rooms.map((r) => {
-        if (r.id !== roomId) return r;
-        const emptyIdx = r.players.findIndex((p) => p === null);
-        if (emptyIdx === -1) return r;
-        const nextPlayers = [...r.players];
-        nextPlayers[emptyIdx] = makeBot(emptyIdx);
-        const allFilled = nextPlayers.every(Boolean);
-        return {
-          ...r,
-          players: nextPlayers,
-          status: allFilled ? 'ready' : r.status,
-        };
-      }),
-    }));
+  async callBot(battleId, seatIdx = null, fillAll = false) {
+    const res = await apiPost('/api/battles/call-bot', { battleId, seatIdx, fillAll });
+    if (res.ok && Array.isArray(res.battles)) {
+      get().syncServerBattles(res.battles);
+    }
+    return {
+      ...res,
+      battle: res.battle ? hydrateBattle(res.battle) : null,
+    };
   },
 
-  startRoom(roomId) {
-    set((state) => ({
-      rooms: state.rooms.map((r) =>
-        r.id === roomId && r.status !== 'spinning' && r.status !== 'finished'
-          ? { ...r, status: 'spinning', currentRound: 0 }
-          : r
-      ),
-    }));
+  async leaveBattle(battleId) {
+    await flushBeforeMutation();
+    const res = await apiPost('/api/battles/leave', { battleId });
+    if (res.ok) {
+      if (Array.isArray(res.battles)) get().syncServerBattles(res.battles);
+      if (res.account) battleBridge?.applyAccountFromServer?.(res);
+    }
+    return res;
   },
 
-  rollRoundOutcomes(roomId, roundIdx) {
-    const room = get().rooms.find((r) => r.id === roomId);
-    if (!room) return [];
-    const crate = room.crates[roundIdx];
-    if (!crate) return [];
-    return room.players.map(() => weightedPick(crate.items, 'chance'));
-  },
-
-  commitRound(roomId, roundIdx, pickedItems) {
-    set((state) => ({
-      rooms: state.rooms.map((r) => {
-        if (r.id !== roomId) return r;
-        const updatedPlayers = r.players.map((p, idx) => {
-          if (!p) return p;
-          const item = pickedItems[idx];
-          if (!item) return p;
-          return {
-            ...p,
-            pulls: [...p.pulls, item],
-            total: p.total + item.value,
-          };
-        });
-        const isLast = roundIdx >= r.crates.length - 1;
-        let winnerSeat = null;
-        if (isLast) {
-          let best = -1;
-          let tiedSeats = [];
-          updatedPlayers.forEach((p, idx) => {
-            if (!p) return;
-            if (p.total > best) {
-              best = p.total;
-              tiedSeats = [idx];
-            } else if (p.total === best) {
-              tiedSeats.push(idx);
-            }
-          });
-          if (tiedSeats.length > 0) {
-            winnerSeat = tiedSeats[randInt(0, tiedSeats.length - 1)];
-          }
-        }
-        return {
-          ...r,
-          players: updatedPlayers,
-          currentRound: isLast ? roundIdx : roundIdx + 1,
-          status: isLast ? 'finished' : 'spinning',
-          winnerSeat,
-        };
-      }),
-    }));
-  },
-
-  markSettled(roomId) {
-    set((state) => ({
-      rooms: state.rooms.map((r) => (r.id === roomId ? { ...r, settled: true } : r)),
-    }));
+  async settleBattle(battleId) {
+    const res = await apiPost('/api/battles/settle', { battleId });
+    if (res.ok) {
+      if (Array.isArray(res.battles)) get().syncServerBattles(res.battles);
+      if (Array.isArray(res.drops)) useDrops.getState().syncServerDrops(res.drops);
+      if (res.account) battleBridge?.applyAccountFromServer?.(res);
+    }
+    return {
+      ...res,
+      battle: res.battle ? hydrateBattle(res.battle) : null,
+    };
   },
 }));

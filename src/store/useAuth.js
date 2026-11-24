@@ -1,10 +1,20 @@
 import { create } from 'zustand';
-import { apiGet, apiPost, clearToken, getToken, setToken } from '../lib/api.js';
+import {
+  apiGet,
+  apiPost,
+  clearRecoveryBlob,
+  clearToken,
+  getRecoveryBlob,
+  getToken,
+  setRecoveryBlob,
+  setToken,
+} from '../lib/api.js';
 import { setAccessGuards, setSyncHandler, useGame } from './useGame.js';
 import { useSiteConfig } from './siteConfig.js';
 import { useChat } from './chat.js';
 import { useDrops } from './drops.js';
 import { useToast } from './toast.js';
+import { setBattleBridge, useBattles } from './battles.js';
 
 let syncTimer = null;
 let pendingSnapshot = null;
@@ -16,7 +26,7 @@ let pollInFlight = false;
 
 export const useAuth = create((set, get) => {
   const applySharedState = (
-    { me, userKey, siteConfig, chat, drops, accounts, promoCodes, hadToken },
+    { me, userKey, siteConfig, chat, drops, battles, accounts, promoCodes, hadToken, recoveryBlob },
     forceReloadMe = false,
     sentToken = ''
   ) => {
@@ -28,6 +38,12 @@ export const useAuth = create((set, get) => {
     }
     if (Array.isArray(drops)) {
       useDrops.getState().syncServerDrops(drops);
+    }
+    if (Array.isArray(battles)) {
+      useBattles.getState().syncServerBattles(battles);
+    }
+    if (recoveryBlob) {
+      setRecoveryBlob(recoveryBlob);
     }
 
     const prevKey = get().currentUserKey;
@@ -55,7 +71,13 @@ export const useAuth = create((set, get) => {
           syncTimer = null;
         }
         useGame.getState().loadAccountData(me);
-        if (!forceReloadMe && prevKey === userKey && prevRev > 0 && prevRev !== nextRev) {
+        if (
+          !forceReloadMe &&
+          prevKey === userKey &&
+          prevRev > 0 &&
+          prevRev !== nextRev &&
+          (me.lastRevReason || 'admin') === 'admin'
+        ) {
           useToast.getState().push('Account updated by admin.', 'info');
         }
       }
@@ -142,6 +164,7 @@ export const useAuth = create((set, get) => {
         return;
       }
       if (res.stale && res.account) {
+        if (res.recoveryBlob) setRecoveryBlob(res.recoveryBlob);
         const curKey = get().currentUserKey;
         const nextRev = Number(res.account.adminRevision) || 1;
         set((state) => ({
@@ -149,7 +172,9 @@ export const useAuth = create((set, get) => {
           accounts: curKey ? { ...state.accounts, [curKey]: res.account } : state.accounts,
         }));
         useGame.getState().loadAccountData(res.account);
-        useToast.getState().push('Account updated by admin.', 'info');
+        if ((res.account.lastRevReason || 'admin') === 'admin') {
+          useToast.getState().push('Account updated by admin.', 'info');
+        }
         dirtyWhileSyncing = false;
       } else if (res.status === 401) {
         clearToken(sentToken);
@@ -158,6 +183,7 @@ export const useAuth = create((set, get) => {
         useToast.getState().push('Session expired — please sign in again.', 'info');
         dirtyWhileSyncing = false;
       } else if (res.ok) {
+        if (res.recoveryBlob) setRecoveryBlob(res.recoveryBlob);
         const curKey = get().currentUserKey;
         if (curKey && get().accounts[curKey]) {
           set((state) => ({
@@ -206,6 +232,40 @@ export const useAuth = create((set, get) => {
     resetAccountOnServer: () => get().resetCurrentAccountData(),
   });
 
+  setBattleBridge({
+    flushBeforeBattle: async () => {
+      if (syncTimer) {
+        clearTimeout(syncTimer);
+        syncTimer = null;
+      }
+      await flushSync();
+    },
+    openAuthModal: (tab) => {
+      get().openAuthModal(tab);
+    },
+    getCurrentAccount: () => {
+      const { currentUserKey, accounts } = get();
+      return currentUserKey ? accounts[currentUserKey] || null : null;
+    },
+    applyAccountFromServer: (res) => {
+      if (res?.recoveryBlob) setRecoveryBlob(res.recoveryBlob);
+      if (!res?.account) return;
+      const curKey = get().currentUserKey;
+      if (!curKey) return;
+      pendingSnapshot = null;
+      if (syncTimer) {
+        clearTimeout(syncTimer);
+        syncTimer = null;
+      }
+      const nextRev = Number(res.account.adminRevision) || get().activeAdminRevision || 1;
+      set((state) => ({
+        activeAdminRevision: nextRev,
+        accounts: { ...state.accounts, [curKey]: res.account },
+      }));
+      useGame.getState().loadAccountData(res.account);
+    },
+  });
+
   return {
     accounts: {},
     currentUserKey: null,
@@ -237,6 +297,25 @@ export const useAuth = create((set, get) => {
         const res = await apiGet('/api/state');
         if (epochAtStart !== authEpoch || sentToken !== getToken()) {
           return { ok: false, stalePoll: true };
+        }
+        if (res.ok && res.needsRecovery) {
+          const blob = getRecoveryBlob();
+          if (blob) {
+            const rec = await apiPost('/api/auth/recover', { recoveryBlob: blob });
+            if (epochAtStart !== authEpoch || sentToken !== getToken()) {
+              return { ok: false, stalePoll: true };
+            }
+            if (rec.ok && rec.me && rec.userKey) {
+              applySharedState(rec, forceReloadMe, sentToken);
+              return rec;
+            }
+          }
+          if (res.me) {
+            applySharedState(res, forceReloadMe, sentToken);
+          } else {
+            applySharedState({ ...res, hadToken: true }, forceReloadMe, sentToken);
+          }
+          return res;
         }
         if (res.ok) {
           applySharedState(res, forceReloadMe, sentToken);
@@ -299,6 +378,7 @@ export const useAuth = create((set, get) => {
       if (!res.ok) return res;
       authEpoch += 1;
       setToken(res.token);
+      if (res.recoveryBlob) setRecoveryBlob(res.recoveryBlob);
       if (res.siteConfig) useSiteConfig.getState().applyServerConfig(res.siteConfig);
       pendingSnapshot = null;
       set({
@@ -317,6 +397,7 @@ export const useAuth = create((set, get) => {
       if (!res.ok) return res;
       authEpoch += 1;
       setToken(res.token);
+      if (res.recoveryBlob) setRecoveryBlob(res.recoveryBlob);
       if (res.siteConfig) useSiteConfig.getState().applyServerConfig(res.siteConfig);
       pendingSnapshot = null;
       set({
@@ -339,6 +420,7 @@ export const useAuth = create((set, get) => {
       authEpoch += 1;
       await apiPost('/api/auth/logout', {});
       clearToken();
+      clearRecoveryBlob();
       pendingSnapshot = null;
       set({
         accounts: {},
@@ -361,6 +443,7 @@ export const useAuth = create((set, get) => {
       }
       pendingSnapshot = null;
       const res = await apiPost('/api/account/reset', {});
+      if (res.ok && res.recoveryBlob) setRecoveryBlob(res.recoveryBlob);
       if (res.ok && res.account) {
         const curKey = get().currentUserKey;
         const nextRev = Number(res.account.adminRevision) || 1;
@@ -469,6 +552,7 @@ export const useAuth = create((set, get) => {
       }
       await flushSync();
       const res = await apiPost('/api/promo/redeem', { code });
+      if (res.ok && res.recoveryBlob) setRecoveryBlob(res.recoveryBlob);
       if (res.ok && res.account) {
         const curKey = get().currentUserKey;
         const nextRev = Number(res.account.adminRevision) || 1;

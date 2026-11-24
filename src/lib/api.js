@@ -1,7 +1,9 @@
 const TOKEN_KEY = 'petflip99_token_v1';
 const CID_KEY = 'petflip99_cid_v1';
+const RECOVERY_KEY = 'petflip99_recovery_v1';
 
 let memoryToken = '';
+let memoryRecoveryBlob = '';
 
 export function getToken() {
   try {
@@ -35,6 +37,36 @@ export function clearToken(expectedToken = '') {
     if (localStorage.getItem(TOKEN_KEY) === expectedToken) {
       localStorage.removeItem(TOKEN_KEY);
     }
+  } catch {
+    // Ignore storage removal failures
+  }
+}
+
+export function getRecoveryBlob() {
+  try {
+    const stored = localStorage.getItem(RECOVERY_KEY) || '';
+    memoryRecoveryBlob = stored;
+    return stored;
+  } catch {
+    return memoryRecoveryBlob;
+  }
+}
+
+export function setRecoveryBlob(blob) {
+  if (!blob) return;
+  const clean = String(blob);
+  memoryRecoveryBlob = clean;
+  try {
+    localStorage.setItem(RECOVERY_KEY, clean);
+  } catch {
+    // Ignore storage write failures; memoryRecoveryBlob remains active
+  }
+}
+
+export function clearRecoveryBlob() {
+  memoryRecoveryBlob = '';
+  try {
+    localStorage.removeItem(RECOVERY_KEY);
   } catch {
     // Ignore storage removal failures
   }
