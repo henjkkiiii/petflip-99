@@ -176,6 +176,18 @@ export const useGame = create((set, get) => ({
       toast.push('Enter a valid whole gem amount (> 0)', 'error');
       return false;
     }
+    const minBet = Number(siteConfig?.games?.minBet) || 0;
+    const maxBet = Number(siteConfig?.games?.maxBet) || 0;
+    if (account.role !== 'admin') {
+      if (minBet > 0 && amount < minBet) {
+        toast.push(`Minimum bet is ${minBet.toLocaleString()} gems.`, 'error');
+        return false;
+      }
+      if (maxBet > 0 && amount > maxBet) {
+        toast.push(`Maximum bet is ${maxBet.toLocaleString()} gems.`, 'error');
+        return false;
+      }
+    }
     const { balance } = get();
     if (amount > balance) {
       toast.push('Insufficient gems! Claim rewards or deposit demo gems.', 'error');
@@ -213,10 +225,12 @@ export const useGame = create((set, get) => ({
       };
       const net = safePayout - safeAmount;
       const isWin = safePayout > safeAmount || (safePayout > 0 && safeMult >= 1);
+      const siteConfig = accessGuards?.getSiteConfig?.();
+      const xpMult = Math.max(0.25, Number(siteConfig?.games?.xpMultiplier) || 1);
       return {
         winStreak: isWin ? (state.winStreak || 0) + 1 : 0,
         history: [entry, ...state.history].slice(0, 200),
-        xp: state.xp + safeAmount / 100_000,
+        xp: state.xp + (safeAmount / 100_000) * xpMult,
         stats: {
           wagered: state.stats.wagered + safeAmount,
           profit: state.stats.profit + net,
@@ -343,7 +357,9 @@ export const useGame = create((set, get) => ({
       };
     }
 
-    const gems = Math.round(reward?.gems || 100_000);
+    const siteConfig = accessGuards?.getSiteConfig?.();
+    const dailyMult = Math.max(0.25, Number(siteConfig?.games?.dailyMultiplier) || 1);
+    const gems = Math.round((reward?.gems || 100_000) * dailyMult);
     set((state) => ({
       balance: state.balance + gems,
       lastDaily: now,

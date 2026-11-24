@@ -178,14 +178,16 @@ export function Topbar({
         {account && (
           <>
             {isAdmin && (
-              <Link
-                to="/admin"
+              <a
+                href="/admin"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="btn btn-sm btn-gold hide-sm"
-                title="Open Admin Panel"
+                title="Open Full Admin Dashboard in a new tab"
               >
                 <ShieldAlert size={15} />
-                <span>Admin</span>
-              </Link>
+                <span>Admin ↗</span>
+              </a>
             )}
 
             <Link to="/profile" className="user-pill" title="View profile & stats">

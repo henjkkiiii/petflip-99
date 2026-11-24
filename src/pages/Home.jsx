@@ -196,6 +196,7 @@ export function Home() {
 
   const liveBattles = rooms.filter((r) => r.status === 'waiting' || r.status === 'playing');
   const openBattlesCount = rooms.filter((r) => r.status === 'waiting').length;
+  const branding = useSiteConfig((s) => s.branding);
 
   return (
     <div>
@@ -205,14 +206,20 @@ export function Home() {
           <div className="hero-kicker">
             <span className="poster-dot" />
             <Sparkles size={13} />
-            <span>LIVE · {playersOnline} Playing PS99 Gem Games</span>
+            <span>LIVE · {playersOnline} Playing {branding?.currencyName || 'Gem'} Games</span>
           </div>
           <h1 className="hero-title">
-            UNBOX <span className="grad-text">HUGES &amp; TITANICS</span>
+            {branding?.heroTitle ? (
+              <span className="grad-text">{branding.heroTitle}</span>
+            ) : (
+              <>
+                UNBOX <span className="grad-text">HUGES &amp; TITANICS</span>
+              </>
+            )}
           </h1>
           <p className="hero-sub">
-            Open {ps99.crates.length} custom PS99 Crates with real RAP pet drops, battle live
-            players in Case Battles, and chase huge multipliers in Crash, Mines, Plinko &amp; more.
+            {branding?.heroSubtitle ||
+              `Open ${ps99.crates.length} custom PS99 Crates with real RAP pet drops, battle live players in Case Battles, and chase huge multipliers in Crash, Mines, Plinko & more.`}
           </p>
           <div className="hero-actions">
             <Link to="/cases" className="btn btn-lg btn-primary">

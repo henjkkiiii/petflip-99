@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AppShell } from './components/AppShell.jsx';
+import { AuthModal } from './components/AuthModal.jsx';
+import { Toasts } from './components/Toasts.jsx';
+import { useAuth } from './store/useAuth.js';
 import { Home } from './pages/Home.jsx';
 import { Crash } from './pages/Crash.jsx';
 import { Mines } from './pages/Mines.jsx';
@@ -22,8 +25,33 @@ import { Rewards } from './pages/Rewards.jsx';
 import { Admin } from './pages/Admin.jsx';
 import './pages/Pages.css';
 
+function StandaloneAdminShell() {
+  useEffect(() => {
+    const auth = useAuth.getState();
+    auth.initAuth();
+    const stopLiveSync = auth.startLiveSync();
+    return () => {
+      stopLiveSync();
+    };
+  }, []);
+
+  return (
+    <>
+      <Admin />
+      <AuthModal />
+      <Toasts />
+    </>
+  );
+}
+
 export default function App() {
   const location = useLocation();
+  const isAdminRoute =
+    location.pathname === '/admin' || location.pathname.startsWith('/admin/');
+
+  if (isAdminRoute) {
+    return <StandaloneAdminShell />;
+  }
 
   return (
     <AppShell>
@@ -53,7 +81,6 @@ export default function App() {
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/rewards" element={<Rewards />} />
-            <Route path="/admin" element={<Admin />} />
             <Route path="*" element={<Home />} />
           </Routes>
         </motion.div>

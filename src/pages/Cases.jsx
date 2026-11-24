@@ -13,6 +13,7 @@ export function Cases() {
 
   const crateDiscountPct = useSiteConfig((s) => s.crateDiscountPct);
   const cratePriceOverrides = useSiteConfig((s) => s.cratePriceOverrides);
+  const crateDisabledIds = useSiteConfig((s) => s.crateDisabledIds || []);
   const pricingCfg = useMemo(
     () => ({ crateDiscountPct, cratePriceOverrides }),
     [crateDiscountPct, cratePriceOverrides]
@@ -20,7 +21,10 @@ export function Cases() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = ps99.crates.filter((c) => !q || c.name.toLowerCase().includes(q));
+    const disabledSet = new Set(crateDisabledIds);
+    const list = ps99.crates.filter(
+      (c) => !disabledSet.has(c.id) && (!q || c.name.toLowerCase().includes(q))
+    );
     return [...list].sort((a, b) => {
       if (sort === 'price-asc') {
         return getEffectiveCratePrice(a, pricingCfg) - getEffectiveCratePrice(b, pricingCfg);
@@ -30,7 +34,7 @@ export function Cases() {
       }
       return a.name.localeCompare(b.name);
     });
-  }, [query, sort, pricingCfg]);
+  }, [query, sort, pricingCfg, crateDisabledIds]);
 
   return (
     <div>

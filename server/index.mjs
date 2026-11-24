@@ -57,7 +57,7 @@ function getEffectiveCratePriceServer(crate, config) {
   if (!crate) return 0;
   const override = config?.cratePriceOverrides?.[crate.id];
   const base = Number.isFinite(override) && override > 0 ? override : crate.price;
-  const discountPct = Math.min(50, Math.max(0, Number(config?.crateDiscountPct) || 0));
+  const discountPct = Math.min(80, Math.max(0, Number(config?.crateDiscountPct) || 0));
   return Math.max(1_000, Math.round(base * (1 - discountPct / 100)));
 }
 
@@ -111,6 +111,22 @@ const MIME_TYPES = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
+const ALL_GAME_IDS = [
+  'cases',
+  'battles',
+  'crash',
+  'mines',
+  'towers',
+  'plinko',
+  'dice',
+  'limbo',
+  'coinflip',
+  'roulette',
+  'blackjack',
+];
+
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
 const DEFAULT_SITE_CONFIG = {
   startingBalance: 500_000,
   allowDeposits: true,
@@ -124,6 +140,35 @@ const DEFAULT_SITE_CONFIG = {
   },
   crateDiscountPct: 0,
   cratePriceOverrides: {},
+  crateDisabledIds: [],
+  branding: {
+    siteName: 'PETFLIP',
+    siteSuffix: '99',
+    heroTitle: 'Unbox Huge & Titanic Pets.',
+    heroSubtitle: 'Open custom PS99 crates, battle live in PvP Case Battles, and play 11 gem arcade games.',
+    footerText: 'Fan-made demo. Play-money gems only – no real value, no real deposits. Not affiliated with BIG Games or Roblox.',
+    currencyName: 'Gems',
+  },
+  theme: {
+    preset: 'cyber',
+    primary: '#4f6bff',
+    gem: '#38d9ff',
+    gold: '#ffc531',
+    bg: '#0b0d14',
+    panel: '#12151f',
+  },
+  games: {
+    enabled: Object.fromEntries(ALL_GAME_IDS.map((id) => [id, true])),
+    minBet: 1_000,
+    maxBet: 0,
+    xpMultiplier: 1,
+    dailyMultiplier: 1,
+  },
+  ui: {
+    showLiveTicker: true,
+    showPromoSidebar: true,
+    showFairnessLink: true,
+  },
   auditLog: [],
 };
 
@@ -187,6 +232,56 @@ function sanitizeAccountsMap(accounts) {
   return out;
 }
 
+function sanitizeBranding(b) {
+  const src = b && typeof b === 'object' ? b : {};
+  return {
+    siteName: String(src.siteName || DEFAULT_SITE_CONFIG.branding.siteName).trim().slice(0, 28) || 'PETFLIP',
+    siteSuffix: String(src.siteSuffix ?? DEFAULT_SITE_CONFIG.branding.siteSuffix).trim().slice(0, 10),
+    heroTitle: String(src.heroTitle || DEFAULT_SITE_CONFIG.branding.heroTitle).trim().slice(0, 90),
+    heroSubtitle: String(src.heroSubtitle || DEFAULT_SITE_CONFIG.branding.heroSubtitle).trim().slice(0, 200),
+    footerText: String(src.footerText || DEFAULT_SITE_CONFIG.branding.footerText).trim().slice(0, 260),
+    currencyName: String(src.currencyName || DEFAULT_SITE_CONFIG.branding.currencyName).trim().slice(0, 20) || 'Gems',
+  };
+}
+
+function sanitizeTheme(t) {
+  const src = t && typeof t === 'object' ? t : {};
+  const pickHex = (val, fallback) => (HEX_COLOR_RE.test(String(val || '').trim()) ? String(val).trim() : fallback);
+  return {
+    preset: String(src.preset || 'cyber').slice(0, 24),
+    primary: pickHex(src.primary, DEFAULT_SITE_CONFIG.theme.primary),
+    gem: pickHex(src.gem, DEFAULT_SITE_CONFIG.theme.gem),
+    gold: pickHex(src.gold, DEFAULT_SITE_CONFIG.theme.gold),
+    bg: pickHex(src.bg, DEFAULT_SITE_CONFIG.theme.bg),
+    panel: pickHex(src.panel, DEFAULT_SITE_CONFIG.theme.panel),
+  };
+}
+
+function sanitizeGamesConfig(g) {
+  const src = g && typeof g === 'object' ? g : {};
+  const enabledIn = src.enabled && typeof src.enabled === 'object' ? src.enabled : {};
+  const enabled = {};
+  for (const id of ALL_GAME_IDS) {
+    enabled[id] = enabledIn[id] === undefined ? true : Boolean(enabledIn[id]);
+  }
+  return {
+    enabled,
+    minBet: Math.max(1, Math.min(1e12, Math.round(Number(src.minBet ?? DEFAULT_SITE_CONFIG.games.minBet) || 1_000))),
+    maxBet: Math.max(0, Math.min(1e13, Math.round(Number(src.maxBet ?? 0) || 0))),
+    xpMultiplier: Math.max(0.25, Math.min(20, Number(src.xpMultiplier ?? 1) || 1)),
+    dailyMultiplier: Math.max(0.25, Math.min(20, Number(src.dailyMultiplier ?? 1) || 1)),
+  };
+}
+
+function sanitizeUiConfig(u) {
+  const src = u && typeof u === 'object' ? u : {};
+  return {
+    showLiveTicker: src.showLiveTicker === undefined ? true : Boolean(src.showLiveTicker),
+    showPromoSidebar: src.showPromoSidebar === undefined ? true : Boolean(src.showPromoSidebar),
+    showFairnessLink: src.showFairnessLink === undefined ? true : Boolean(src.showFairnessLink),
+  };
+}
+
 function sanitizeSiteConfig(cfg, isAdmin) {
   const merged = {
     ...DEFAULT_SITE_CONFIG,
@@ -196,8 +291,15 @@ function sanitizeSiteConfig(cfg, isAdmin) {
       tone: ['info', 'gold', 'danger'].includes(cfg?.banner?.tone) ? cfg.banner.tone : 'info',
     },
     cratePriceOverrides: { ...(cfg?.cratePriceOverrides || {}) },
+    crateDisabledIds: Array.isArray(cfg?.crateDisabledIds)
+      ? Array.from(new Set(cfg.crateDisabledIds.map((x) => String(x))))
+      : [],
+    branding: sanitizeBranding(cfg?.branding),
+    theme: sanitizeTheme(cfg?.theme),
+    games: sanitizeGamesConfig(cfg?.games),
+    ui: sanitizeUiConfig(cfg?.ui),
   };
-  merged.auditLog = isAdmin && Array.isArray(cfg?.auditLog) ? cfg.auditLog.slice(0, 100) : [];
+  merged.auditLog = isAdmin && Array.isArray(cfg?.auditLog) ? cfg.auditLog.slice(0, 150) : [];
   return merged;
 }
 
@@ -223,18 +325,7 @@ function loadOrCreateDb() {
   if (!db.preservedProfiles || typeof db.preservedProfiles !== 'object') db.preservedProfiles = {};
   if (!Array.isArray(db.chat)) db.chat = [];
   if (!Array.isArray(db.drops)) db.drops = [];
-  db.siteConfig = {
-    ...DEFAULT_SITE_CONFIG,
-    ...(db.siteConfig || {}),
-    banner: {
-      text: String(db.siteConfig?.banner?.text || ''),
-      tone: ['info', 'gold', 'danger'].includes(db.siteConfig?.banner?.tone)
-        ? db.siteConfig.banner.tone
-        : 'info',
-    },
-    cratePriceOverrides: { ...(db.siteConfig?.cratePriceOverrides || {}) },
-    auditLog: Array.isArray(db.siteConfig?.auditLog) ? db.siteConfig.auditLog.slice(0, 100) : [],
-  };
+  db.siteConfig = sanitizeSiteConfig(db.siteConfig, true);
 
   if (countAdmins(db.accounts) === 0) {
     const salt = crypto.randomBytes(16).toString('hex');
@@ -1733,6 +1824,11 @@ async function handleApi(req, res, pathname) {
 
   if (pathname === '/api/admin/config') {
     const patch = body.patch && typeof body.patch === 'object' ? body.patch : {};
+    if (patch.resetAllConfig) {
+      const prevLog = db.siteConfig.auditLog || [];
+      db.siteConfig = sanitizeSiteConfig(DEFAULT_SITE_CONFIG, true);
+      db.siteConfig.auditLog = prevLog;
+    }
     if (patch.startingBalance !== undefined) {
       db.siteConfig.startingBalance = Math.max(0, Math.min(1e13, Math.round(Number(patch.startingBalance) || 0)));
     }
@@ -1748,7 +1844,7 @@ async function handleApi(req, res, pathname) {
       };
     }
     if (patch.crateDiscountPct !== undefined) {
-      db.siteConfig.crateDiscountPct = Math.min(50, Math.max(0, Math.round(Number(patch.crateDiscountPct) || 0)));
+      db.siteConfig.crateDiscountPct = Math.min(80, Math.max(0, Math.round(Number(patch.crateDiscountPct) || 0)));
     }
     if (patch.cratePriceOverride && typeof patch.cratePriceOverride === 'object') {
       const { crateId, price } = patch.cratePriceOverride;
@@ -1760,9 +1856,49 @@ async function handleApi(req, res, pathname) {
         }
       }
     }
+    if (patch.toggleCrateDisabled && typeof patch.toggleCrateDisabled === 'object') {
+      const { crateId, disabled } = patch.toggleCrateDisabled;
+      if (crateId) {
+        const set = new Set(db.siteConfig.crateDisabledIds || []);
+        if (disabled) set.add(String(crateId));
+        else set.delete(String(crateId));
+        db.siteConfig.crateDisabledIds = Array.from(set);
+      }
+    }
     if (patch.resetCratePricing) {
       db.siteConfig.crateDiscountPct = 0;
       db.siteConfig.cratePriceOverrides = {};
+      db.siteConfig.crateDisabledIds = [];
+    }
+    if (patch.branding && typeof patch.branding === 'object') {
+      db.siteConfig.branding = sanitizeBranding({
+        ...(db.siteConfig.branding || {}),
+        ...patch.branding,
+      });
+    }
+    if (patch.theme && typeof patch.theme === 'object') {
+      db.siteConfig.theme = sanitizeTheme({
+        ...(db.siteConfig.theme || {}),
+        ...patch.theme,
+      });
+    }
+    if (patch.games && typeof patch.games === 'object') {
+      const prevGames = db.siteConfig.games || DEFAULT_SITE_CONFIG.games;
+      const mergedEnabled = {
+        ...(prevGames.enabled || {}),
+        ...(patch.games.enabled && typeof patch.games.enabled === 'object' ? patch.games.enabled : {}),
+      };
+      db.siteConfig.games = sanitizeGamesConfig({
+        ...prevGames,
+        ...patch.games,
+        enabled: mergedEnabled,
+      });
+    }
+    if (patch.ui && typeof patch.ui === 'object') {
+      db.siteConfig.ui = sanitizeUiConfig({
+        ...(db.siteConfig.ui || {}),
+        ...patch.ui,
+      });
     }
     if (body.auditAction) {
       logAudit(me.username, String(body.auditAction).slice(0, 200));
@@ -1771,6 +1907,80 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, {
       ok: true,
       siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+    });
+  }
+
+  if (pathname === '/api/admin/accounts/airdrop') {
+    const amount = Math.round(Number(body.amount) || 0);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 1e12) {
+      return sendJson(res, 400, { ok: false, error: 'Airdrop amount must be between 1 and 1T.' });
+    }
+    const includeBanned = Boolean(body.includeBanned);
+    let count = 0;
+    for (const acc of Object.values(db.accounts)) {
+      if (!acc || (!includeBanned && acc.banned)) continue;
+      if (!acc.data) acc.data = createDefaultAccountData(0);
+      acc.data.balance = Math.max(0, (acc.data.balance || 0) + amount);
+      bumpAdminRevision(acc, 'airdrop');
+      count++;
+    }
+    logAudit(me.username, `Airdropped +${formatGemsServer(amount)} gems to ${count} accounts`);
+    if (body.announce) {
+      const msg = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-adm`,
+        user: me.username,
+        level: 99,
+        text: `💎 ADMIN RAIN! Every player just received +${formatGemsServer(amount)} Gems!`,
+        isUser: false,
+        isAdmin: true,
+        isBroadcast: true,
+        isReal: true,
+        time: Date.now(),
+      };
+      db.chat = [...db.chat.slice(-49), msg];
+    }
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      count,
+      accounts: sanitizeAccountsMap(db.accounts),
+      chat: db.chat,
+      siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+    });
+  }
+
+  if (pathname === '/api/admin/battles/clear-finished') {
+    const before = db.battles.length;
+    db.battles = db.battles.filter((b) => b.status !== 'finished');
+    const removed = before - db.battles.length;
+    logAudit(me.username, `Cleared ${removed} finished case battles`);
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      removed,
+      battles: listBattles(),
+      siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+    });
+  }
+
+  if (pathname === '/api/admin/drops/clear') {
+    db.drops = [];
+    logAudit(me.username, 'Cleared Live Drops Ticker feed');
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      drops: [],
+      siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+    });
+  }
+
+  if (pathname === '/api/admin/export-snapshot') {
+    return sendJson(res, 200, {
+      ok: true,
+      exportedAt: Date.now(),
+      accounts: sanitizeAccountsMap(db.accounts),
+      siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+      promoCodes: listPromoCodes(),
     });
   }
 
@@ -1984,10 +2194,25 @@ async function handleApi(req, res, pathname) {
         };
       }
       if (cfg.crateDiscountPct !== undefined) {
-        db.siteConfig.crateDiscountPct = Math.min(50, Math.max(0, Math.round(Number(cfg.crateDiscountPct) || 0)));
+        db.siteConfig.crateDiscountPct = Math.min(80, Math.max(0, Math.round(Number(cfg.crateDiscountPct) || 0)));
       }
       if (cfg.cratePriceOverrides && typeof cfg.cratePriceOverrides === 'object') {
         db.siteConfig.cratePriceOverrides = { ...cfg.cratePriceOverrides };
+      }
+      if (Array.isArray(cfg.crateDisabledIds)) {
+        db.siteConfig.crateDisabledIds = Array.from(new Set(cfg.crateDisabledIds.map((x) => String(x))));
+      }
+      if (cfg.branding && typeof cfg.branding === 'object') {
+        db.siteConfig.branding = sanitizeBranding({ ...(db.siteConfig.branding || {}), ...cfg.branding });
+      }
+      if (cfg.theme && typeof cfg.theme === 'object') {
+        db.siteConfig.theme = sanitizeTheme({ ...(db.siteConfig.theme || {}), ...cfg.theme });
+      }
+      if (cfg.games && typeof cfg.games === 'object') {
+        db.siteConfig.games = sanitizeGamesConfig({ ...(db.siteConfig.games || {}), ...cfg.games });
+      }
+      if (cfg.ui && typeof cfg.ui === 'object') {
+        db.siteConfig.ui = sanitizeUiConfig({ ...(db.siteConfig.ui || {}), ...cfg.ui });
       }
     }
 

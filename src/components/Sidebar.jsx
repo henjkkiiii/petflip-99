@@ -22,6 +22,7 @@ import ps99 from '../data/ps99.json';
 import { GEM, GEM_BAG } from '../lib/assets.js';
 import { useAuth } from '../store/useAuth.js';
 import { useBattles } from '../store/battles.js';
+import { useSiteConfig } from '../store/siteConfig.js';
 import { DAILY_COOLDOWN_MS, getLevel, useGame } from '../store/useGame.js';
 
 const MAIN_LINKS = [
@@ -53,6 +54,10 @@ export function Sidebar() {
   const accounts = useAuth((s) => s.accounts);
   const isAdmin = Boolean(currentUserKey && accounts[currentUserKey]?.role === 'admin');
 
+  const branding = useSiteConfig((s) => s.branding);
+  const ui = useSiteConfig((s) => s.ui);
+  const gamesEnabled = useSiteConfig((s) => s.games?.enabled || {});
+
   const rooms = useBattles((s) => s.rooms);
   const openBattlesCount = rooms.filter((r) => r.status === 'waiting').length;
 
@@ -79,8 +84,8 @@ export function Sidebar() {
           <img src={GEM} alt="PETFLIP 99" className="logo-gem" />
         </div>
         <div className="logo-text">
-          <span className="logo-title">PETFLIP</span>
-          <span className="logo-99">99</span>
+          <span className="logo-title">{branding?.siteName || 'PETFLIP'}</span>
+          {branding?.siteSuffix && <span className="logo-99">{branding.siteSuffix}</span>}
         </div>
       </NavLink>
 
@@ -156,35 +161,39 @@ export function Sidebar() {
           })}
 
           {isAdmin && (
-            <NavLink
-              to="/admin"
-              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-              title="Admin Panel"
+            <a
+              href="/admin"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="nav-link"
+              title="Open Full Admin Dashboard in a new tab"
             >
               <span className="nav-icon">
                 <ShieldAlert size={17} className="text-gold" />
               </span>
-              <span className="nav-label">Admin Panel</span>
+              <span className="nav-label">Admin Dashboard</span>
               <span className="nav-badge" style={{ background: 'rgba(255,197,49,0.2)', color: 'var(--gold)' }}>
-                ADMIN
+                NEW TAB ↗
               </span>
-            </NavLink>
+            </a>
           )}
         </div>
       </div>
 
-      <div className="sidebar-promo">
-        <img src={GEM_BAG} alt="Daily Rewards" className="sidebar-promo-bag" />
-        <div className="sidebar-promo-body">
-          <div className="sidebar-promo-title">
-            {hasReadyReward ? 'Reward Ready!' : 'Daily Rewards'}
+      {ui?.showPromoSidebar !== false && (
+        <div className="sidebar-promo">
+          <img src={GEM_BAG} alt="Daily Rewards" className="sidebar-promo-bag" />
+          <div className="sidebar-promo-body">
+            <div className="sidebar-promo-title">
+              {hasReadyReward ? 'Reward Ready!' : 'Daily Rewards'}
+            </div>
+            <div className="sidebar-promo-sub">7-Day RAP Streak</div>
+            <NavLink to="/rewards" className="btn btn-sm btn-gold" style={{ marginTop: 2 }}>
+              {hasReadyReward ? 'Claim Now' : 'Open'}
+            </NavLink>
           </div>
-          <div className="sidebar-promo-sub">7-Day RAP Streak</div>
-          <NavLink to="/rewards" className="btn btn-sm btn-gold" style={{ marginTop: 2 }}>
-            {hasReadyReward ? 'Claim Now' : 'Open'}
-          </NavLink>
         </div>
-      </div>
+      )}
     </aside>
   );
 }
