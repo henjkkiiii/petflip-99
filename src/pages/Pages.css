@@ -290,29 +290,28 @@
   position: absolute;
   left: 50%;
   top: 42%;
-  width: 112px;
-  height: 112px;
+  width: 108px;
+  height: 108px;
   border-radius: 16px;
   object-fit: contain;
   transform: translate(-50%, -50%);
-  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.55));
-  animation: posterFloat 4s ease-in-out infinite;
+  animation: posterFloat 4.2s ease-in-out infinite;
   z-index: 1;
   pointer-events: none;
   transition: transform 0.24s ease;
 }
 
 .poster-card:hover .poster-art {
-  transform: translate(-50%, -54%) scale(1.08);
+  transform: translate(-50%, -55%) scale(1.08);
 }
 
 @keyframes posterFloat {
   0%,
   100% {
-    margin-top: 0;
+    transform: translate(-50%, -50%);
   }
   50% {
-    margin-top: -6px;
+    transform: translate(-50%, -55%);
   }
 }
 
@@ -1935,5 +1934,118 @@
 @media (max-width: 380px) {
   .battle-pulls-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Lobby Progression, Live Battles Arena & Poster Polish */
+.poster-sub {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(230, 236, 255, 0.78);
+  margin-top: 2px;
+}
+
+.lobby-session-bar {
+  padding: 13px 16px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: linear-gradient(95deg, rgba(79, 107, 255, 0.14), rgba(168, 85, 247, 0.12), rgba(255, 197, 49, 0.1));
+  border-color: rgba(139, 92, 246, 0.35);
+}
+
+.lobby-xp-track {
+  width: 100%;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(8, 10, 18, 0.7);
+  overflow: hidden;
+}
+
+.lobby-xp-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #38d9ff, #a855f7, #ffc531);
+  transition: width 0.35s ease;
+}
+
+.lobby-battles-card {
+  padding: 14px 16px;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: radial-gradient(circle at 90% 15%, rgba(236, 72, 153, 0.14), transparent 50%), var(--panel);
+  border-color: rgba(236, 72, 153, 0.3);
+}
+
+.lobby-battles-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lobby-battle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 11px;
+  border-radius: 12px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-light);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.lobby-battle-pill:hover {
+  border-color: var(--gold);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 768px) {
+  .poster-art {
+    animation: none;
+  }
+
+  .hero-beam {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .poster-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .poster-card {
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .poster-art {
+    width: 76px;
+    height: 76px;
+  }
+
+  .poster-title {
+    font-size: 14.5px;
+  }
+
+  .poster-play-pill {
+    display: none;
+  }
+
+  .hero-actions .btn {
+    flex: 1 1 auto;
+    padding: 10px 14px;
+    font-size: 13.5px;
+  }
+
+  .lobby-battle-pill {
+    width: 100%;
+    justify-content: space-between;
   }
 }

@@ -13,15 +13,16 @@ import {
   PackageOpen,
   Rocket,
   ShieldAlert,
-  ShieldCheck,
   Spade,
   Swords,
   TrendingUp,
   User,
 } from 'lucide-react';
+import ps99 from '../data/ps99.json';
 import { GEM, GEM_BAG } from '../lib/assets.js';
-import { sound } from '../lib/sound.js';
 import { useAuth } from '../store/useAuth.js';
+import { useBattles } from '../store/battles.js';
+import { DAILY_COOLDOWN_MS, getLevel, useGame } from '../store/useGame.js';
 
 const MAIN_LINKS = [
   { to: '/', label: 'Lobby', icon: Home },
@@ -52,6 +53,25 @@ export function Sidebar() {
   const accounts = useAuth((s) => s.accounts);
   const isAdmin = Boolean(currentUserKey && accounts[currentUserKey]?.role === 'admin');
 
+  const rooms = useBattles((s) => s.rooms);
+  const openBattlesCount = rooms.filter((r) => r.status === 'waiting').length;
+
+  const lastDaily = useGame((s) => s.lastDaily);
+  const xp = useGame((s) => s.xp);
+  const claimedRewards = useGame((s) => s.claimedRewards);
+
+  const level = getLevel(xp);
+  const canDaily = Boolean(
+    currentUserKey && (lastDaily === 0 || Date.now() - lastDaily >= DAILY_COOLDOWN_MS)
+  );
+  const hasMilestoneReady = Boolean(
+    currentUserKey &&
+      (ps99.economy?.levelRewards || []).some(
+        (m) => level >= m.level && !claimedRewards.includes(m.level)
+      )
+  );
+  const hasReadyReward = canDaily || hasMilestoneReady;
+
   return (
     <aside className="sidebar">
       <NavLink to="/" className="sidebar-logo">
@@ -69,6 +89,8 @@ export function Sidebar() {
           <div className="sidebar-heading">Explore</div>
           {MAIN_LINKS.map((item) => {
             const Icon = item.icon;
+            const isBattles = item.to === '/battles';
+            const badgeText = isBattles && openBattlesCount > 0 ? `${openBattlesCount} OPEN` : item.badge;
             return (
               <NavLink
                 key={item.to}
@@ -81,7 +103,11 @@ export function Sidebar() {
                   <Icon size={17} />
                 </span>
                 <span className="nav-label">{item.label}</span>
-                {item.badge && <span className="nav-badge">{item.badge}</span>}
+                {badgeText && (
+                  <span className={`nav-badge ${isBattles && openBattlesCount > 0 ? 'nav-badge-open' : ''}`}>
+                    {badgeText}
+                  </span>
+                )}
               </NavLink>
             );
           })}
@@ -112,6 +138,7 @@ export function Sidebar() {
           <div className="sidebar-heading">Account</div>
           {ACCOUNT_LINKS.map((item) => {
             const Icon = item.icon;
+            const showClaim = item.to === '/rewards' && hasReadyReward;
             return (
               <NavLink
                 key={item.to}
@@ -123,6 +150,7 @@ export function Sidebar() {
                   <Icon size={17} />
                 </span>
                 <span className="nav-label">{item.label}</span>
+                {showClaim && <span className="nav-badge nav-badge-claim">CLAIM</span>}
               </NavLink>
             );
           })}
@@ -148,10 +176,12 @@ export function Sidebar() {
       <div className="sidebar-promo">
         <img src={GEM_BAG} alt="Daily Rewards" className="sidebar-promo-bag" />
         <div className="sidebar-promo-body">
-          <div className="sidebar-promo-title">Daily Rewards</div>
+          <div className="sidebar-promo-title">
+            {hasReadyReward ? 'Reward Ready!' : 'Daily Rewards'}
+          </div>
           <div className="sidebar-promo-sub">7-Day RAP Streak</div>
           <NavLink to="/rewards" className="btn btn-sm btn-gold" style={{ marginTop: 2 }}>
-            Open
+            {hasReadyReward ? 'Claim Now' : 'Open'}
           </NavLink>
         </div>
       </div>

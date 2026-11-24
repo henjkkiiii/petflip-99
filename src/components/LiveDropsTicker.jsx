@@ -48,11 +48,10 @@ export function LiveDropsTicker() {
           {visible.slice(0, 14).map((drop) => (
             <motion.div
               key={drop.id}
-              layout
-              initial={{ opacity: 0, x: -24, scale: 0.92 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+              initial={{ opacity: 0, x: -16 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
               style={{ flexShrink: 0 }}
             >
               <Link

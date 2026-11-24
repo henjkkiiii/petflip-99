@@ -112,6 +112,7 @@ function requireActiveAccount() {
 export const useGame = create((set, get) => ({
   ...createDefaultAccountData(0),
   username: 'Guest',
+  winStreak: 0,
   settings: readSettings(),
 
   loadAccountData(account) {
@@ -121,10 +122,12 @@ export const useGame = create((set, get) => ({
     }
     const base = createDefaultAccountData(0);
     const data = account.data || {};
+    const switchingUser = account.username !== get().username;
     isHydrating = true;
     try {
       set({
         username: account.username,
+        ...(switchingUser ? { winStreak: 0 } : {}),
         balance: Number.isFinite(data.balance) ? Math.max(0, Math.round(data.balance)) : base.balance,
         inventory: Array.isArray(data.inventory) ? data.inventory : [],
         history: Array.isArray(data.history) ? data.history : [],
@@ -145,6 +148,7 @@ export const useGame = create((set, get) => ({
       set({
         ...createDefaultAccountData(0),
         username: 'Guest',
+        winStreak: 0,
       });
     } finally {
       isHydrating = false;
@@ -210,6 +214,7 @@ export const useGame = create((set, get) => ({
       const net = safePayout - safeAmount;
       const isWin = safePayout > safeAmount || (safePayout > 0 && safeMult >= 1);
       return {
+        winStreak: isWin ? (state.winStreak || 0) + 1 : 0,
         history: [entry, ...state.history].slice(0, 200),
         xp: state.xp + safeAmount / 100_000,
         stats: {

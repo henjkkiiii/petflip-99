@@ -2,12 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowUpCircle,
+  Flame,
   LogIn,
   LogOut,
   MessageSquare,
   Plus,
   ShieldAlert,
-  ShieldCheck,
   UserPlus,
   Volume2,
   VolumeX,
@@ -28,6 +28,7 @@ export function Topbar({
 }) {
   const balance = useGame((s) => s.balance);
   const xp = useGame((s) => s.xp);
+  const winStreak = useGame((s) => s.winStreak);
   const muted = useGame((s) => s.settings.muted);
   const toggleMuted = useGame((s) => s.toggleMuted);
 
@@ -134,6 +135,16 @@ export function Topbar({
               <ArrowUpCircle size={15} />
               <span className="hide-xs">Withdraw</span>
             </button>
+
+            {winStreak >= 2 && (
+              <span
+                className={`streak-pill ${winStreak >= 5 ? 'streak-hot' : ''}`}
+                title={`${winStreak} wins in a row!`}
+              >
+                <Flame size={13} />
+                <span>{winStreak}×</span>
+              </span>
+            )}
           </>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
