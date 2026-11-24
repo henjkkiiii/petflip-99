@@ -10,9 +10,6 @@ import { DepositModal } from './DepositModal.jsx';
 import { WithdrawModal } from './WithdrawModal.jsx';
 import { FairnessModal } from './FairnessModal.jsx';
 import { AuthModal } from './AuthModal.jsx';
-import { startFakeFeed } from '../lib/bots.js';
-import { useFeed } from '../store/feed.js';
-import { startFakeDrops, useDrops } from '../store/drops.js';
 import { useAuth } from '../store/useAuth.js';
 import { ALL_GAMES, useSiteConfig } from '../store/siteConfig.js';
 
@@ -23,7 +20,6 @@ export function AppShell({ children }) {
   const [chatOpen, setChatOpen] = useState(false);
 
   const location = useLocation();
-  const botsEnabled = useSiteConfig((s) => s.botsEnabled);
   const banner = useSiteConfig((s) => s.banner);
   const maintenanceMode = useSiteConfig((s) => s.maintenanceMode);
   const branding = useSiteConfig((s) => s.branding);
@@ -49,18 +45,6 @@ export function AppShell({ children }) {
       stopLiveSync();
     };
   }, []);
-
-  useEffect(() => {
-    if (!botsEnabled) return undefined;
-    const push = useFeed.getState().push;
-    const pushDrop = useDrops.getState().pushDrop;
-    const stopFeed = startFakeFeed((bet) => push(bet));
-    const stopDrops = startFakeDrops((drop) => pushDrop(drop));
-    return () => {
-      stopFeed();
-      stopDrops();
-    };
-  }, [botsEnabled]);
 
   return (
     <div className="app-shell">

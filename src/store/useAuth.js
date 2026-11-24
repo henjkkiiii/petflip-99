@@ -15,6 +15,7 @@ import { useChat } from './chat.js';
 import { useDrops } from './drops.js';
 import { useToast } from './toast.js';
 import { setBattleBridge, useBattles } from './battles.js';
+import { setCoinflipBridge, useCoinflips } from './coinflips.js';
 
 let syncTimer = null;
 let pendingSnapshot = null;
@@ -26,7 +27,7 @@ let pollInFlight = false;
 
 export const useAuth = create((set, get) => {
   const applySharedState = (
-    { me, userKey, siteConfig, chat, drops, battles, accounts, promoCodes, hadToken, recoveryBlob },
+    { me, userKey, siteConfig, chat, drops, battles, coinflips, accounts, promoCodes, hadToken, recoveryBlob },
     forceReloadMe = false,
     sentToken = ''
   ) => {
@@ -41,6 +42,9 @@ export const useAuth = create((set, get) => {
     }
     if (Array.isArray(battles)) {
       useBattles.getState().syncServerBattles(battles);
+    }
+    if (Array.isArray(coinflips)) {
+      useCoinflips.getState().syncServerCoinflips(coinflips);
     }
     if (recoveryBlob) {
       setRecoveryBlob(recoveryBlob);
@@ -234,6 +238,40 @@ export const useAuth = create((set, get) => {
 
   setBattleBridge({
     flushBeforeBattle: async () => {
+      if (syncTimer) {
+        clearTimeout(syncTimer);
+        syncTimer = null;
+      }
+      await flushSync();
+    },
+    openAuthModal: (tab) => {
+      get().openAuthModal(tab);
+    },
+    getCurrentAccount: () => {
+      const { currentUserKey, accounts } = get();
+      return currentUserKey ? accounts[currentUserKey] || null : null;
+    },
+    applyAccountFromServer: (res) => {
+      if (res?.recoveryBlob) setRecoveryBlob(res.recoveryBlob);
+      if (!res?.account) return;
+      const curKey = get().currentUserKey;
+      if (!curKey) return;
+      pendingSnapshot = null;
+      if (syncTimer) {
+        clearTimeout(syncTimer);
+        syncTimer = null;
+      }
+      const nextRev = Number(res.account.adminRevision) || get().activeAdminRevision || 1;
+      set((state) => ({
+        activeAdminRevision: nextRev,
+        accounts: { ...state.accounts, [curKey]: res.account },
+      }));
+      useGame.getState().loadAccountData(res.account);
+    },
+  });
+
+  setCoinflipBridge({
+    flushBeforeCoinflip: async () => {
       if (syncTimer) {
         clearTimeout(syncTimer);
         syncTimer = null;

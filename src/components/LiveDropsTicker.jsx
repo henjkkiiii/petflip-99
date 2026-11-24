@@ -44,7 +44,12 @@ export function LiveDropsTicker() {
       </div>
 
       <div className="drops-ticker-strip">
-        <AnimatePresence initial={false}>
+        {visible.length === 0 ? (
+          <div className="text-muted" style={{ fontSize: 12, padding: '6px 10px' }}>
+            No live drops yet — open a crate to appear here!
+          </div>
+        ) : (
+          <AnimatePresence initial={false}>
           {visible.slice(0, 14).map((drop) => (
             <motion.div
               key={drop.id}
@@ -77,7 +82,8 @@ export function LiveDropsTicker() {
               </Link>
             </motion.div>
           ))}
-        </AnimatePresence>
+          </AnimatePresence>
+        )}
       </div>
     </div>
   );

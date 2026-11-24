@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MessageSquare, Send, ShieldAlert, Users, X } from 'lucide-react';
-import { generateChatMessage } from '../lib/bots.js';
 import { useAuth } from '../store/useAuth.js';
 import { useChat } from '../store/chat.js';
 import { useSiteConfig } from '../store/siteConfig.js';
@@ -10,44 +9,19 @@ import { sound } from '../lib/sound.js';
 export function Chat({ open, onClose }) {
   const currentUserKey = useAuth((s) => s.currentUserKey);
   const accounts = useAuth((s) => s.accounts);
+  const onlineCount = useAuth((s) => s.onlineCount);
   const openAuthModal = useAuth((s) => s.openAuthModal);
   const account = currentUserKey ? accounts[currentUserKey] || null : null;
 
   const messages = useChat((s) => s.messages);
-  const pushMessage = useChat((s) => s.pushMessage);
   const sendUserMessage = useChat((s) => s.sendUserMessage);
 
   const chatEnabled = useSiteConfig((s) => s.chatEnabled);
-  const botsEnabled = useSiteConfig((s) => s.botsEnabled);
   const pushToast = useToast((s) => s.push);
 
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [onlineCount] = useState(() => 180 + Math.floor(Math.random() * 90));
   const listRef = useRef(null);
-
-  useEffect(() => {
-    if (!botsEnabled) return undefined;
-    let timer = null;
-    let stopped = false;
-
-    const tick = () => {
-      if (stopped) return;
-      const delay = 3200 + Math.random() * 4800;
-      timer = setTimeout(() => {
-        if (!stopped) {
-          pushMessage(generateChatMessage());
-          tick();
-        }
-      }, delay);
-    };
-    tick();
-
-    return () => {
-      stopped = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [botsEnabled, pushMessage]);
 
   useEffect(() => {
     if (listRef.current) {
@@ -115,7 +89,12 @@ export function Chat({ open, onClose }) {
       )}
 
       <div className="chat-messages" ref={listRef}>
-        {messages.map((m) => {
+        {messages.length === 0 ? (
+          <div className="text-muted" style={{ textAlign: 'center', padding: '24px 12px', fontSize: 12.5 }}>
+            No messages yet — say hi to start the chat!
+          </div>
+        ) : (
+          messages.map((m) => {
           const isOwn = Boolean(
             m.isUser || (account && m.isReal && m.user?.toLowerCase() === account.username?.toLowerCase())
           );
@@ -138,7 +117,8 @@ export function Chat({ open, onClose }) {
               </div>
             </div>
           );
-        })}
+          })
+        )}
       </div>
 
       <form className="chat-form" onSubmit={send}>

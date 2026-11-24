@@ -321,6 +321,7 @@ function loadOrCreateDb() {
   if (!db.revokedTokens || typeof db.revokedTokens !== 'object') db.revokedTokens = {};
   if (!db.promoCodes || typeof db.promoCodes !== 'object') db.promoCodes = {};
   if (!Array.isArray(db.battles)) db.battles = [];
+  if (!Array.isArray(db.coinflips)) db.coinflips = [];
   if (!db.restoredUsers || typeof db.restoredUsers !== 'object') db.restoredUsers = {};
   if (!db.preservedProfiles || typeof db.preservedProfiles !== 'object') db.preservedProfiles = {};
   if (!Array.isArray(db.chat)) db.chat = [];
@@ -817,6 +818,83 @@ function settleDueBattles() {
   if (dirty) saveDb();
 }
 
+function listCoinflips() {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  db.coinflips = (db.coinflips || []).filter(
+    (c) => c && (c.status !== 'finished' || (c.finishedAt || c.createdAt || 0) > cutoff)
+  );
+  return [...db.coinflips].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 40);
+}
+
+function startCoinflipServer(cf) {
+  const outcome = crypto.randomInt(0, 2) === 0 ? 'diamond' : 'huge';
+  const winnerIdx = cf.players[0]?.side === outcome ? 0 : 1;
+  const payout = Math.round(cf.bet * 1.76);
+  const now = Date.now();
+  cf.outcome = outcome;
+  cf.winnerIdx = winnerIdx;
+  cf.winnerName = cf.players[winnerIdx]?.name || 'Winner';
+  cf.payout = payout;
+  cf.status = 'flipping';
+  cf.startedAt = now;
+  cf.revealAt = now + 2850;
+  cf.rewardSettled = false;
+}
+
+function settleCoinflipServer(cf) {
+  if (!cf || cf.rewardSettled || cf.status === 'waiting') return false;
+  cf.rewardSettled = true;
+  cf.status = 'finished';
+  cf.finishedAt = Date.now();
+  const now = cf.finishedAt;
+
+  for (const p of cf.players || []) {
+    if (!p || p.isBot || !p.userKey) continue;
+    const acc = db.accounts[p.userKey];
+    if (!acc) continue;
+    if (!acc.data) acc.data = createDefaultAccountData(0);
+
+    const won = p.seat === cf.winnerIdx;
+    const winPayout = won ? cf.payout : 0;
+    if (won) {
+      acc.data.balance = Math.max(0, (acc.data.balance || 0) + winPayout);
+    }
+
+    const entry = {
+      id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
+      game: 'Coinflip',
+      amount: cf.bet,
+      multiplier: won ? 1.76 : 0,
+      payout: winPayout,
+      time: now,
+    };
+    acc.data.history = [entry, ...(acc.data.history || [])].slice(0, 200);
+    const xpMult = Math.max(0.25, Number(db.siteConfig?.games?.xpMultiplier) || 1);
+    acc.data.xp = (Number(acc.data.xp) || 0) + (cf.bet / 100_000) * xpMult;
+    const st = acc.data.stats || createDefaultAccountData(0).stats;
+    acc.data.stats = {
+      wagered: (st.wagered || 0) + cf.bet,
+      profit: (st.profit || 0) + (winPayout - cf.bet),
+      bets: (st.bets || 0) + 1,
+      wins: (st.wins || 0) + (won ? 1 : 0),
+      biggestWin: Math.max(st.biggestWin || 0, winPayout),
+    };
+    bumpAdminRevision(acc, 'coinflip');
+  }
+  return true;
+}
+
+function settleDueCoinflips() {
+  const now = Date.now();
+  let changed = false;
+  for (const cf of db.coinflips || []) {
+    if (cf && cf.status === 'flipping' && !cf.rewardSettled && now >= (cf.revealAt || 0)) {
+      if (settleCoinflipServer(cf)) changed = true;
+    }
+  }
+  if (changed) saveDb();
+}
+
 function listBattles() {
   const active = db.battles.filter((b) => b && b.status !== 'finished');
   const finished = db.battles
@@ -838,6 +916,7 @@ async function handleApi(req, res, pathname) {
 
   if (req.method === 'GET' && pathname === '/api/state') {
     settleDueBattles();
+    settleDueCoinflips();
 
     if (!session) {
       const signed = findValidSignedToken(req);
@@ -897,6 +976,7 @@ async function handleApi(req, res, pathname) {
       chat: db.chat.slice(-50),
       drops: db.drops.slice(0, 24),
       battles: listBattles(),
+      coinflips: listCoinflips(),
       accounts: isAdmin ? sanitizeAccountsMap(db.accounts) : null,
       promoCodes: isAdmin ? listPromoCodes() : null,
       onlineClients: activeClients.size,
@@ -1527,6 +1607,194 @@ async function handleApi(req, res, pathname) {
       battle,
       battles: listBattles(),
       drops: db.drops.slice(0, 24),
+      account: sanitizeAccount(me),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
+    });
+  }
+
+  if (pathname === '/api/coinflips/create') {
+    if (db.siteConfig.maintenanceMode && !isAdmin) {
+      return sendJson(res, 403, { ok: false, error: 'Site is in Maintenance Mode.' });
+    }
+    if (db.siteConfig?.games?.enabled?.coinflip === false && !isAdmin) {
+      return sendJson(res, 403, { ok: false, error: 'Coinflip is currently paused by admin.' });
+    }
+    const bet = Math.round(Number(body.bet) || 0);
+    if (!Number.isFinite(bet) || bet <= 0) {
+      return sendJson(res, 400, { ok: false, error: 'Enter a valid bet amount (> 0).' });
+    }
+    const minBet = Number(db.siteConfig?.games?.minBet) || 0;
+    const maxBet = Number(db.siteConfig?.games?.maxBet) || 0;
+    if (!isAdmin) {
+      if (minBet > 0 && bet < minBet) {
+        return sendJson(res, 400, { ok: false, error: `Minimum bet is ${formatGemsServer(minBet)} gems.` });
+      }
+      if (maxBet > 0 && bet > maxBet) {
+        return sendJson(res, 400, { ok: false, error: `Maximum bet is ${formatGemsServer(maxBet)} gems.` });
+      }
+    }
+    if ((me.data?.balance || 0) < bet) {
+      return sendJson(res, 400, { ok: false, error: 'Insufficient gems to create this Coinflip 1v1.' });
+    }
+    const side = body.side === 'huge' ? 'huge' : 'diamond';
+    if (!me.data) me.data = createDefaultAccountData(0);
+    me.data.balance = Math.max(0, (me.data.balance || 0) - bet);
+    bumpAdminRevision(me, 'coinflip');
+
+    const cf = {
+      id: `cf-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+      bet,
+      creatorKey: session.userKey,
+      creatorName: me.username,
+      players: [
+        {
+          seat: 0,
+          userKey: session.userKey,
+          name: me.username,
+          side,
+          isBot: false,
+        },
+        null,
+      ],
+      status: 'waiting',
+      outcome: null,
+      winnerIdx: null,
+      winnerName: null,
+      payout: Math.round(bet * 1.76),
+      rewardSettled: false,
+      createdAt: Date.now(),
+    };
+    db.coinflips.unshift(cf);
+    db.coinflips = db.coinflips.slice(0, 40);
+    saveDb();
+
+    return sendJson(res, 200, {
+      ok: true,
+      coinflip: cf,
+      coinflips: listCoinflips(),
+      account: sanitizeAccount(me),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
+    });
+  }
+
+  if (pathname === '/api/coinflips/join') {
+    settleDueCoinflips();
+    if (db.siteConfig.maintenanceMode && !isAdmin) {
+      return sendJson(res, 403, { ok: false, error: 'Site is in Maintenance Mode.' });
+    }
+    const cf = db.coinflips.find((c) => c.id === body.coinflipId);
+    if (!cf) {
+      return sendJson(res, 404, { ok: false, error: 'Coinflip room not found.' });
+    }
+    if (cf.status !== 'waiting' || cf.players[1] !== null) {
+      return sendJson(res, 400, { ok: false, error: 'This Coinflip 1v1 already started or is full.' });
+    }
+    if (cf.players[0]?.userKey === session.userKey) {
+      return sendJson(res, 400, { ok: false, error: 'You cannot join your own Coinflip — wait for a player or Call Bot!' });
+    }
+    if ((me.data?.balance || 0) < cf.bet) {
+      return sendJson(res, 400, { ok: false, error: 'Insufficient gems to join this Coinflip.' });
+    }
+
+    if (!me.data) me.data = createDefaultAccountData(0);
+    me.data.balance = Math.max(0, (me.data.balance || 0) - cf.bet);
+    bumpAdminRevision(me, 'coinflip');
+
+    const oppSide = cf.players[0]?.side === 'diamond' ? 'huge' : 'diamond';
+    cf.players[1] = {
+      seat: 1,
+      userKey: session.userKey,
+      name: me.username,
+      side: oppSide,
+      isBot: false,
+    };
+    startCoinflipServer(cf);
+    saveDb();
+
+    return sendJson(res, 200, {
+      ok: true,
+      coinflip: cf,
+      coinflips: listCoinflips(),
+      account: sanitizeAccount(me),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
+    });
+  }
+
+  if (pathname === '/api/coinflips/call-bot') {
+    settleDueCoinflips();
+    const cf = db.coinflips.find((c) => c.id === body.coinflipId);
+    if (!cf) {
+      return sendJson(res, 404, { ok: false, error: 'Coinflip room not found.' });
+    }
+    if (cf.status !== 'waiting' || cf.players[1] !== null) {
+      return sendJson(res, 400, { ok: false, error: 'This Coinflip 1v1 already has an opponent.' });
+    }
+    if (cf.creatorKey !== session.userKey && !isAdmin) {
+      return sendJson(res, 403, { ok: false, error: 'Only the creator or an admin can call a bot.' });
+    }
+
+    const oppSide = cf.players[0]?.side === 'diamond' ? 'huge' : 'diamond';
+    const botName = pickBotName(new Set([cf.creatorName]));
+    cf.players[1] = {
+      seat: 1,
+      userKey: null,
+      name: botName,
+      side: oppSide,
+      isBot: true,
+    };
+    startCoinflipServer(cf);
+    saveDb();
+
+    return sendJson(res, 200, {
+      ok: true,
+      coinflip: cf,
+      coinflips: listCoinflips(),
+    });
+  }
+
+  if (pathname === '/api/coinflips/leave') {
+    settleDueCoinflips();
+    const cf = db.coinflips.find((c) => c.id === body.coinflipId);
+    if (!cf) {
+      return sendJson(res, 404, { ok: false, error: 'Coinflip room not found.' });
+    }
+    if (cf.status !== 'waiting') {
+      return sendJson(res, 400, { ok: false, error: 'Cannot cancel after the flip has started.' });
+    }
+    if (cf.creatorKey !== session.userKey && !isAdmin) {
+      return sendJson(res, 403, { ok: false, error: 'Only the creator or an admin can cancel.' });
+    }
+    const creatorAcc = db.accounts[cf.creatorKey];
+    if (creatorAcc) {
+      if (!creatorAcc.data) creatorAcc.data = createDefaultAccountData(0);
+      creatorAcc.data.balance = Math.max(0, (creatorAcc.data.balance || 0) + cf.bet);
+      bumpAdminRevision(creatorAcc, 'coinflip');
+    }
+    db.coinflips = db.coinflips.filter((c) => c.id !== cf.id);
+    saveDb();
+
+    return sendJson(res, 200, {
+      ok: true,
+      cancelled: true,
+      coinflips: listCoinflips(),
+      account: sanitizeAccount(me),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
+    });
+  }
+
+  if (pathname === '/api/coinflips/settle') {
+    const cf = db.coinflips.find((c) => c.id === body.coinflipId);
+    if (!cf) {
+      return sendJson(res, 404, { ok: false, error: 'Coinflip room not found.' });
+    }
+    if (cf.status === 'flipping' && !cf.rewardSettled && Date.now() >= (cf.revealAt || 0) - 150) {
+      settleCoinflipServer(cf);
+      saveDb();
+    }
+    return sendJson(res, 200, {
+      ok: true,
+      coinflip: cf,
+      coinflips: listCoinflips(),
       account: sanitizeAccount(me),
       recoveryBlob: encryptRecoveryBlob(session.userKey, me),
     });

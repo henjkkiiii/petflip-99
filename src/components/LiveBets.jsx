@@ -32,8 +32,15 @@ export function LiveBets() {
             </tr>
           </thead>
           <tbody>
-            <AnimatePresence initial={false}>
-              {items.slice(0, 15).map((item) => {
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="text-muted" style={{ textAlign: 'center', padding: 20 }}>
+                  No live bets yet — place a bet to appear here!
+                </td>
+              </tr>
+            ) : (
+              <AnimatePresence initial={false}>
+                {items.slice(0, 15).map((item) => {
                 const win = item.payout > item.amount || (item.payout > 0 && item.multiplier >= 1);
                 return (
                   <motion.tr
@@ -85,6 +92,7 @@ export function LiveBets() {
                 );
               })}
             </AnimatePresence>
+            )}
           </tbody>
         </table>
       </div>
