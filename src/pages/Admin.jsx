@@ -39,6 +39,7 @@ import {
   Zap,
 } from 'lucide-react';
 import ps99 from '../data/ps99.json';
+import hugePets from '../data/huge-pets.json';
 import { useAuth } from '../store/useAuth.js';
 import { getLevel } from '../store/useGame.js';
 import {
@@ -63,6 +64,11 @@ const TIER_RANK = { gargantuan: 4, titanic: 3, huge: 2, normal: 1 };
 
 function buildPetCatalog() {
   const byName = new Map();
+  for (const p of hugePets) {
+    if (!byName.has(p.name)) {
+      byName.set(p.name, { ...p, crateId: 'gargantuan-god' });
+    }
+  }
   for (const crate of ps99.crates || []) {
     for (const item of crate.items || []) {
       if (!byName.has(item.name)) {

@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import ps99 from '../data/ps99.json';
+import hugePets from '../data/huge-pets.json';
 import { Modal } from './Modal.jsx';
 import { GemIcon } from './GemIcon.jsx';
 import { PetImage } from './PetImage.jsx';
@@ -35,26 +36,8 @@ const STEPS = [
   'Credited!',
 ];
 
-const TIER_RANK = { gargantuan: 4, titanic: 3, huge: 2, normal: 1 };
-
 function buildDepositablePets() {
-  const byName = new Map();
-  for (const crate of ps99.crates || []) {
-    for (const item of crate.items || []) {
-      if (!byName.has(item.name)) {
-        byName.set(item.name, {
-          name: item.name,
-          thumb: item.thumb,
-          value: item.value,
-          tier: item.tier || 'normal',
-        });
-      }
-    }
-  }
-  return Array.from(byName.values()).sort((a, b) => {
-    const tr = (TIER_RANK[b.tier] || 0) - (TIER_RANK[a.tier] || 0);
-    return tr !== 0 ? tr : b.value - a.value;
-  });
+  return hugePets;
 }
 
 export function DepositModal({ open, onClose }) {
