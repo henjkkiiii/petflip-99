@@ -1,5 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Award, CheckCircle2, Droplets, Gift, Lock, RefreshCw, Sparkles, TrendingUp } from 'lucide-react';
+import {
+  AlertCircle,
+  Award,
+  CheckCircle2,
+  Gift,
+  Lock,
+  LogIn,
+  RefreshCw,
+  Sparkles,
+  Ticket,
+  TrendingUp,
+} from 'lucide-react';
 import ps99 from '../data/ps99.json';
 import {
   DAILY_COOLDOWN_MS,
@@ -7,6 +18,7 @@ import {
   getLevel,
   useGame,
 } from '../store/useGame.js';
+import { useAuth } from '../store/useAuth.js';
 import { useToast } from '../store/toast.js';
 import { formatGems } from '../lib/format.js';
 import { fetchLiveEconomy } from '../lib/rap.js';
@@ -24,19 +36,27 @@ function formatDuration(ms) {
 }
 
 export function Rewards() {
-  const balance = useGame((s) => s.balance);
   const xp = useGame((s) => s.xp);
   const lastDaily = useGame((s) => s.lastDaily);
   const dailyStreak = useGame((s) => s.dailyStreak);
   const claimedRewards = useGame((s) => s.claimedRewards);
   const claimDaily = useGame((s) => s.claimDaily);
-  const faucet = useGame((s) => s.faucet);
   const claimLevelReward = useGame((s) => s.claimLevelReward);
+
+  const currentUserKey = useAuth((s) => s.currentUserKey);
+  const accounts = useAuth((s) => s.accounts);
+  const openAuthModal = useAuth((s) => s.openAuthModal);
+  const redeemPromoCode = useAuth((s) => s.redeemPromoCode);
+  const account = currentUserKey ? accounts[currentUserKey] || null : null;
+
   const pushToast = useToast((s) => s.push);
 
   const [economy, setEconomy] = useState(ps99.economy);
   const [syncing, setSyncing] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [promoCode, setPromoCode] = useState('');
+  const [promoError, setPromoError] = useState('');
+  const [redeeming, setRedeeming] = useState(false);
   const level = getLevel(xp);
 
   const exclusiveNormalSet = useMemo(
@@ -62,7 +82,6 @@ export function Rewards() {
   const nextIdx = effectiveStreak % economy.dailyRewards.length;
   const currentReward = economy.dailyRewards[nextIdx];
 
-  const canFaucet = balance < economy.faucet.threshold;
   const benchmarks = economy.rapBenchmarks;
 
   const handleSyncRap = async () => {
@@ -105,17 +124,34 @@ export function Rewards() {
     }
   };
 
-  const handleFaucet = () => {
-    const res = faucet(economy.faucet);
-    if (res.ok) {
-      sound.win();
-      fireConfetti(false);
-      pushToast(`Faucet credited +${formatGems(res.amount)} gems!`, 'success');
-    } else if (!res.authRequired) {
-      pushToast(
-        `Faucet is only available when balance is below ${formatGems(economy.faucet.threshold)}.`,
-        'info'
-      );
+  const handleRedeemPromo = async (e) => {
+    e.preventDefault();
+    setPromoError('');
+    if (!account) {
+      openAuthModal('login');
+      return;
+    }
+    const clean = promoCode.trim().toUpperCase();
+    if (!clean) {
+      setPromoError('Enter a promo code first.');
+      return;
+    }
+    if (redeeming) return;
+    sound.click();
+    setRedeeming(true);
+    try {
+      const res = await redeemPromoCode(clean);
+      if (!res.ok) {
+        sound.lose();
+        setPromoError(res.error || 'Could not redeem promo code.');
+      } else {
+        sound.bigWin();
+        fireConfetti(true);
+        setPromoCode('');
+        pushToast(`Redeemed "${res.code}" for +${formatGems(res.gems)} gems!`, 'success');
+      }
+    } finally {
+      setRedeeming(false);
     }
   };
 
@@ -314,29 +350,59 @@ export function Rewards() {
         </div>
       </div>
 
-      {/* Emergency Faucet */}
-      <div className="card" style={{ padding: 20, marginBottom: 22, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Redeem Promo Code */}
+      <div className="card" style={{ padding: 20, marginBottom: 22, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Droplets size={22} className="text-gem" />
-          <h2 style={{ fontSize: 19 }}>Emergency Gem Faucet</h2>
+          <Ticket size={22} className="text-gold" />
+          <div>
+            <h2 style={{ fontSize: 19 }}>Redeem Promo Code</h2>
+            <div className="text-muted" style={{ fontSize: 12.5 }}>
+              Got a promo code from an admin or chat drop? Claim bonus gems below.
+            </div>
+          </div>
         </div>
-        <p className="text-muted" style={{ margin: 0 }}>
-          Out of gems? Claim <strong className="text-gem">{formatGems(economy.faucet.amount)}</strong>{' '}
-          anytime your balance drops below{' '}
-          <strong className="text-gem">{formatGems(economy.faucet.threshold)}</strong>.
-        </p>
-        <div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={!canFaucet}
-            onClick={handleFaucet}
-          >
-            {canFaucet
-              ? `Refill +${formatGems(economy.faucet.amount)}`
-              : `Available below ${formatGems(economy.faucet.threshold)}`}
-          </button>
-        </div>
+
+        {promoError && (
+          <div className="auth-error" style={{ marginBottom: 0 }}>
+            <AlertCircle size={15} />
+            <span>{promoError}</span>
+          </div>
+        )}
+
+        {!account ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                sound.click();
+                openAuthModal('login');
+              }}
+            >
+              <LogIn size={16} /> Sign In to Redeem Codes
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleRedeemPromo} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <input
+              className="input"
+              style={{ flex: 1, minWidth: 220, textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}
+              value={promoCode}
+              onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+              placeholder="Enter promo code (e.g. PETS250K)"
+              maxLength={24}
+              disabled={redeeming}
+            />
+            <button
+              type="submit"
+              className="btn btn-green"
+              disabled={redeeming || !promoCode.trim()}
+            >
+              <Ticket size={16} />
+              <span>{redeeming ? 'Redeeming…' : 'Redeem Code'}</span>
+            </button>
+          </form>
+        )}
       </div>
 
       {/* Small Level Milestones */}

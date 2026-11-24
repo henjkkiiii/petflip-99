@@ -13,7 +13,7 @@ let dirtyWhileSyncing = false;
 let initPromise = null;
 
 export const useAuth = create((set, get) => {
-  const applySharedState = ({ me, userKey, siteConfig, chat, drops, accounts }, forceReloadMe = false) => {
+  const applySharedState = ({ me, userKey, siteConfig, chat, drops, accounts, promoCodes }, forceReloadMe = false) => {
     if (siteConfig) {
       useSiteConfig.getState().applyServerConfig(siteConfig);
     }
@@ -30,10 +30,16 @@ export const useAuth = create((set, get) => {
     if (me && userKey) {
       const nextRev = Number(me.adminRevision) || 1;
       const nextAccounts = accounts || { ...(get().accounts || {}), [userKey]: me };
+      const nextPromos = Array.isArray(promoCodes)
+        ? promoCodes
+        : me.role === 'admin'
+          ? get().promoCodes
+          : [];
       set({
         accounts: nextAccounts,
         currentUserKey: userKey,
         activeAdminRevision: nextRev,
+        promoCodes: nextPromos,
       });
 
       if (forceReloadMe || prevKey !== userKey || prevRev !== nextRev) {
@@ -59,6 +65,7 @@ export const useAuth = create((set, get) => {
         accounts: {},
         currentUserKey: null,
         activeAdminRevision: 0,
+        promoCodes: [],
       });
       if (wasSignedIn || forceReloadMe) {
         useGame.getState().loadGuestState();
@@ -129,7 +136,7 @@ export const useAuth = create((set, get) => {
         dirtyWhileSyncing = false;
       } else if (res.status === 401) {
         clearToken();
-        set({ accounts: {}, currentUserKey: null, activeAdminRevision: 0 });
+        set({ accounts: {}, currentUserKey: null, activeAdminRevision: 0, promoCodes: [] });
         useGame.getState().loadGuestState();
         dirtyWhileSyncing = false;
       } else if (res.ok) {
@@ -185,6 +192,7 @@ export const useAuth = create((set, get) => {
     accounts: {},
     currentUserKey: null,
     activeAdminRevision: 0,
+    promoCodes: [],
     authReady: false,
     authModalOpen: false,
     authModalTab: 'login',
@@ -254,6 +262,7 @@ export const useAuth = create((set, get) => {
         accounts: { [res.userKey]: res.account },
         currentUserKey: res.userKey,
         activeAdminRevision: Number(res.account?.adminRevision) || 1,
+        promoCodes: [],
         authModalOpen: false,
       });
       useGame.getState().loadAccountData(res.account);
@@ -270,6 +279,7 @@ export const useAuth = create((set, get) => {
         accounts: res.accounts || { [res.userKey]: res.account },
         currentUserKey: res.userKey,
         activeAdminRevision: Number(res.account?.adminRevision) || 1,
+        promoCodes: Array.isArray(res.promoCodes) ? res.promoCodes : [],
         authModalOpen: false,
       });
       useGame.getState().loadAccountData(res.account);
@@ -289,6 +299,7 @@ export const useAuth = create((set, get) => {
         accounts: {},
         currentUserKey: null,
         activeAdminRevision: 0,
+        promoCodes: [],
       });
       useGame.getState().loadGuestState();
       get().syncFromServer(false);
@@ -403,6 +414,63 @@ export const useAuth = create((set, get) => {
     async adminDeleteAccount(targetKey) {
       const res = await apiPost('/api/admin/accounts/delete', { targetKey });
       if (res.ok) applyAdminAccountResponse(res);
+      return res;
+    },
+
+    async redeemPromoCode(code) {
+      if (syncTimer) {
+        clearTimeout(syncTimer);
+        syncTimer = null;
+      }
+      await flushSync();
+      const res = await apiPost('/api/promo/redeem', { code });
+      if (res.ok && res.account) {
+        const curKey = get().currentUserKey;
+        const nextRev = Number(res.account.adminRevision) || 1;
+        pendingSnapshot = null;
+        set((state) => ({
+          activeAdminRevision: nextRev,
+          accounts: curKey ? { ...state.accounts, [curKey]: res.account } : state.accounts,
+        }));
+        useGame.getState().loadAccountData(res.account);
+      }
+      return res;
+    },
+
+    async adminCreatePromo(payload) {
+      const res = await apiPost('/api/admin/promos/create', payload);
+      if (res.ok) {
+        if (Array.isArray(res.promoCodes)) set({ promoCodes: res.promoCodes });
+        if (Array.isArray(res.chat)) useChat.getState().syncServerChat(res.chat);
+        if (res.siteConfig) useSiteConfig.getState().applyServerConfig(res.siteConfig);
+      }
+      return res;
+    },
+
+    async adminTogglePromo(code, active) {
+      const res = await apiPost('/api/admin/promos/toggle', { code, active });
+      if (res.ok) {
+        if (Array.isArray(res.promoCodes)) set({ promoCodes: res.promoCodes });
+        if (res.siteConfig) useSiteConfig.getState().applyServerConfig(res.siteConfig);
+      }
+      return res;
+    },
+
+    async adminDeletePromo(code) {
+      const res = await apiPost('/api/admin/promos/delete', { code });
+      if (res.ok) {
+        if (Array.isArray(res.promoCodes)) set({ promoCodes: res.promoCodes });
+        if (res.siteConfig) useSiteConfig.getState().applyServerConfig(res.siteConfig);
+      }
+      return res;
+    },
+
+    async adminAnnouncePromo(code) {
+      const res = await apiPost('/api/admin/promos/announce', { code });
+      if (res.ok) {
+        if (Array.isArray(res.chat)) useChat.getState().syncServerChat(res.chat);
+        if (res.siteConfig) useSiteConfig.getState().applyServerConfig(res.siteConfig);
+      }
       return res;
     },
   };

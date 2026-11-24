@@ -348,20 +348,6 @@ export const useGame = create((set, get) => ({
     return { ok: true, day: nextIdx + 1, amount: gems, pet: bonusPet };
   },
 
-  faucet(faucetCfg = DEFAULT_ECONOMY.faucet) {
-    const account = requireActiveAccount();
-    if (!account) return { ok: false, authRequired: true };
-    const threshold = faucetCfg?.threshold ?? 25_000;
-    const amount = faucetCfg?.amount ?? 50_000;
-    if (get().balance >= threshold) {
-      return { ok: false };
-    }
-    set((state) => ({
-      balance: state.balance + amount,
-    }));
-    return { ok: true, amount };
-  },
-
   toggleMuted() {
     set((state) => {
       const next = { ...state.settings, muted: !state.settings.muted };

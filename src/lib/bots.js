@@ -125,7 +125,7 @@ export const FAKE_CHAT_MESSAGES = [
   'just hit 15x on limbo!!',
   'selling 3 huges to all-in crash',
   'rainbow gargantuan dream is real',
-  'faucet saved me again fr',
+  'anyone got a promo code??',
   'join my 1v1 battle quick',
   'red red red red gold?!',
   'W site ngl animations are clean',

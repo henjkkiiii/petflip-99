@@ -9,12 +9,16 @@ import {
   LogIn,
   Megaphone,
   PackageOpen,
+  Pause,
+  Play,
   RotateCcw,
   ScrollText,
   Search,
   ShieldAlert,
   ShieldCheck,
   Sliders,
+  Sparkles,
+  Ticket,
   Trash2,
   UserPlus,
   Users,
@@ -558,8 +562,13 @@ function ManageUserModal({ targetKey, account, isSelf, onClose, petCatalog }) {
 export function Admin() {
   const currentUserKey = useAuth((s) => s.currentUserKey);
   const accounts = useAuth((s) => s.accounts);
+  const promoCodes = useAuth((s) => s.promoCodes) || [];
   const openAuthModal = useAuth((s) => s.openAuthModal);
   const adminCreateAccount = useAuth((s) => s.adminCreateAccount);
+  const adminCreatePromo = useAuth((s) => s.adminCreatePromo);
+  const adminTogglePromo = useAuth((s) => s.adminTogglePromo);
+  const adminDeletePromo = useAuth((s) => s.adminDeletePromo);
+  const adminAnnouncePromo = useAuth((s) => s.adminAnnouncePromo);
 
   const siteConfig = useSiteConfig();
   const pushAdminBroadcast = useChat((s) => s.pushAdminBroadcast);
@@ -587,6 +596,12 @@ export function Admin() {
   const [discountInput, setDiscountInput] = useState(() =>
     String(siteConfig.crateDiscountPct || 0)
   );
+  const [promoCodeInput, setPromoCodeInput] = useState('');
+  const [promoGemsInput, setPromoGemsInput] = useState('250K');
+  const [promoMaxUses, setPromoMaxUses] = useState('10');
+  const [promoMinLevel, setPromoMinLevel] = useState('1');
+  const [promoMinWager, setPromoMinWager] = useState('0');
+  const [promoAnnounce, setPromoAnnounce] = useState(true);
 
   const petCatalog = useMemo(() => buildPetCatalog(), []);
 
@@ -844,6 +859,7 @@ export function Admin() {
       <div className="admin-tabs">
         {[
           { id: 'accounts', label: 'Accounts & Economy', icon: Users },
+          { id: 'promos', label: `Promo Codes (${promoCodes.filter((p) => p.active).length})`, icon: Ticket },
           { id: 'controls', label: 'Site Controls & Broadcasts', icon: Sliders },
           { id: 'crates', label: 'Crates Control', icon: PackageOpen },
           { id: 'audit', label: `Audit Log (${siteConfig.auditLog?.length || 0})`, icon: ScrollText },
@@ -1021,6 +1037,247 @@ export function Admin() {
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: Promo Codes */}
+      {tab === 'promos' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <form
+            className="card"
+            style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const parsedGems = parseGems(promoGemsInput);
+              if (!Number.isFinite(parsedGems) || parsedGems < 1000) {
+                pushToast('Enter a valid gem reward (>= 1,000, e.g. 250K or 1M).', 'error');
+                return;
+              }
+              const parsedMinWager = promoMinWager.trim() === '0' ? 0 : parseGems(promoMinWager);
+              const res = await adminCreatePromo({
+                code: promoCodeInput,
+                gems: parsedGems,
+                maxUses: Math.max(0, Math.round(Number(promoMaxUses) || 0)),
+                minLevel: Math.max(1, Math.round(Number(promoMinLevel) || 1)),
+                minWagered: Number.isFinite(parsedMinWager) ? Math.max(0, parsedMinWager) : 0,
+                announce: promoAnnounce,
+              });
+              if (!res.ok) {
+                sound.lose();
+                pushToast(res.error || 'Could not create promo code.', 'error');
+                return;
+              }
+              sound.win();
+              setPromoCodeInput('');
+              pushToast(`Created promo code "${res.promo.code}"!`, 'success');
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15 }}>
+              <Ticket size={17} className="text-gold" />
+              <span>Create Promo Code</span>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))',
+                gap: 10,
+              }}
+            >
+              <label className="field-label">
+                <span>Code</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    className="input"
+                    style={{ textTransform: 'uppercase', fontWeight: 700 }}
+                    value={promoCodeInput}
+                    onChange={(e) => setPromoCodeInput(e.target.value.toUpperCase())}
+                    placeholder="e.g. HUGE250K"
+                    maxLength={24}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    style={{ height: 40 }}
+                    onClick={() => {
+                      sound.click();
+                      const rnd = Math.random().toString(36).slice(2, 6).toUpperCase();
+                      setPromoCodeInput(`PET99-${rnd}`);
+                    }}
+                    title="Generate random code"
+                  >
+                    <Sparkles size={14} />
+                  </button>
+                </div>
+              </label>
+
+              <label className="field-label">
+                <span>Gem Reward</span>
+                <input
+                  className="input"
+                  value={promoGemsInput}
+                  onChange={(e) => setPromoGemsInput(e.target.value)}
+                  placeholder="e.g. 250K or 2M"
+                  required
+                />
+              </label>
+
+              <label className="field-label">
+                <span>Max Uses (0 = ∞)</span>
+                <input
+                  type="number"
+                  min="0"
+                  className="input"
+                  value={promoMaxUses}
+                  onChange={(e) => setPromoMaxUses(e.target.value)}
+                />
+              </label>
+
+              <label className="field-label">
+                <span>Min Level</span>
+                <input
+                  type="number"
+                  min="1"
+                  className="input"
+                  value={promoMinLevel}
+                  onChange={(e) => setPromoMinLevel(e.target.value)}
+                />
+              </label>
+
+              <label className="field-label">
+                <span>Min Wagered</span>
+                <input
+                  className="input"
+                  value={promoMinWager}
+                  onChange={(e) => setPromoMinWager(e.target.value)}
+                  placeholder="0 or e.g. 1M"
+                />
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-muted)' }}>
+                <input
+                  type="checkbox"
+                  checked={promoAnnounce}
+                  onChange={(e) => setPromoAnnounce(e.target.checked)}
+                />
+                <span>Announce new promo code in Trollbox Chat</span>
+              </label>
+
+              <button type="submit" className="btn btn-sm btn-green">
+                <Ticket size={15} /> Create Promo Code
+              </button>
+            </div>
+          </form>
+
+          <div className="card live-bets-card">
+            <div className="live-bets-header">
+              <div className="live-bets-title">
+                All Promo Codes ({promoCodes.length})
+              </div>
+            </div>
+            <div className="live-bets-table-wrap">
+              <table className="live-bets-table">
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Reward</th>
+                    <th>Uses</th>
+                    <th>Requirements</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {promoCodes.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>
+                        No promo codes created yet. Create one above!
+                      </td>
+                    </tr>
+                  ) : (
+                    promoCodes.map((p) => {
+                      const exhausted = (p.maxUses || 0) > 0 && (p.uses || 0) >= p.maxUses;
+                      return (
+                        <tr key={p.code}>
+                          <td>
+                            <strong className="text-gold" style={{ letterSpacing: '0.04em' }}>
+                              {p.code}
+                            </strong>
+                          </td>
+                          <td className="text-gem">
+                            <GemAmount value={p.gems} iconSize={14} />
+                          </td>
+                          <td>
+                            {p.uses || 0} / {p.maxUses > 0 ? p.maxUses : '∞'}
+                          </td>
+                          <td className="text-muted">
+                            Lvl {p.minLevel || 1}+
+                            {(p.minWagered || 0) > 0 ? ` · ${formatGems(p.minWagered)}+ wagered` : ''}
+                          </td>
+                          <td>
+                            {exhausted ? (
+                              <span className="role-badge role-badge-banned">EXHAUSTED</span>
+                            ) : p.active ? (
+                              <span className="tier-badge tier-badge-huge" style={{ color: 'var(--green)' }}>
+                                ACTIVE
+                              </span>
+                            ) : (
+                              <span className="tier-badge">PAUSED</span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-gold"
+                                title="Announce in chat"
+                                onClick={async () => {
+                                  sound.click();
+                                  const res = await adminAnnouncePromo(p.code);
+                                  if (res.ok) pushToast(`Announced "${p.code}" in Trollbox Chat!`, 'success');
+                                }}
+                              >
+                                <Megaphone size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline"
+                                title={p.active ? 'Pause code' : 'Enable code'}
+                                onClick={async () => {
+                                  sound.click();
+                                  const res = await adminTogglePromo(p.code, !p.active);
+                                  if (res.ok) {
+                                    pushToast(`${p.code} ${!p.active ? 'enabled' : 'paused'}.`, 'info');
+                                  }
+                                }}
+                              >
+                                {p.active ? <Pause size={13} /> : <Play size={13} />}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-red"
+                                title="Delete promo code"
+                                onClick={async () => {
+                                  sound.click();
+                                  const res = await adminDeletePromo(p.code);
+                                  if (res.ok) pushToast(`Deleted "${p.code}".`, 'info');
+                                }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>

@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
-const DB_PATH = path.join(__dirname, 'db.json');
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'db.json');
 
 const HOST = process.env.HOST || (process.env.PORT ? '0.0.0.0' : '127.0.0.1');
 const PORT = Number(process.env.PORT || 4173);
@@ -16,6 +16,17 @@ const MAX_BODY_BYTES = 512 * 1024;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const INITIAL_ADMIN_BALANCE = 100_000_000;
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
+const PROMO_RE = /^[A-Z0-9_-]{3,24}$/;
+
+function formatGemsServer(n) {
+  const abs = Math.abs(Number(n) || 0);
+  for (const [v, s] of [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']]) {
+    if (abs >= v) {
+      return `${(abs / v).toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1')}${s}`;
+    }
+  }
+  return Math.round(abs).toLocaleString('en-US');
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -128,7 +139,7 @@ function sanitizeSiteConfig(cfg, isAdmin) {
 }
 
 function loadOrCreateDb() {
-  fs.mkdirSync(__dirname, { recursive: true });
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   let db = null;
   if (fs.existsSync(DB_PATH)) {
     try {
@@ -142,6 +153,7 @@ function loadOrCreateDb() {
   }
   if (!db.accounts || typeof db.accounts !== 'object') db.accounts = {};
   if (!db.sessions || typeof db.sessions !== 'object') db.sessions = {};
+  if (!db.promoCodes || typeof db.promoCodes !== 'object') db.promoCodes = {};
   if (!Array.isArray(db.chat)) db.chat = [];
   if (!Array.isArray(db.drops)) db.drops = [];
   db.siteConfig = {
@@ -317,6 +329,19 @@ function readJsonBody(req) {
   });
 }
 
+function listPromoCodes() {
+  return Object.values(db.promoCodes || {}).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function buildPromoBroadcastText(promo) {
+  const extras = [];
+  if ((promo.minLevel || 1) > 1) extras.push(`Lvl ${promo.minLevel}+`);
+  if ((promo.minWagered || 0) > 0) extras.push(`${formatGemsServer(promo.minWagered)}+ wagered`);
+  if ((promo.maxUses || 0) > 0) extras.push(`${promo.maxUses - (promo.uses || 0)} uses left`);
+  const reqStr = extras.length > 0 ? ` (${extras.join(' · ')})` : '';
+  return `PROMO CODE "${promo.code}" for +${formatGemsServer(promo.gems)} Gems${reqStr} — Redeem in Rewards!`;
+}
+
 async function handleApi(req, res, pathname) {
   if (req.method === 'GET' && pathname === '/api/health') {
     return sendJson(res, 200, { ok: true });
@@ -342,6 +367,7 @@ async function handleApi(req, res, pathname) {
       chat: db.chat.slice(-50),
       drops: db.drops.slice(0, 24),
       accounts: isAdmin ? sanitizeAccountsMap(db.accounts) : null,
+      promoCodes: isAdmin ? listPromoCodes() : null,
       onlineClients: activeClients.size,
     });
   }
@@ -440,6 +466,7 @@ async function handleApi(req, res, pathname) {
       account: sanitizeAccount(account),
       siteConfig: sanitizeSiteConfig(db.siteConfig, accIsAdmin),
       accounts: accIsAdmin ? sanitizeAccountsMap(db.accounts) : null,
+      promoCodes: accIsAdmin ? listPromoCodes() : null,
     });
   }
 
@@ -545,6 +572,53 @@ async function handleApi(req, res, pathname) {
     db.drops = [drop, ...db.drops].slice(0, 24);
     saveDb();
     return sendJson(res, 200, { ok: true, drop, drops: db.drops });
+  }
+
+  if (pathname === '/api/promo/redeem') {
+    const code = String(body.code || '').trim().toUpperCase();
+    if (!code) {
+      return sendJson(res, 400, { ok: false, error: 'Enter a promo code.' });
+    }
+    const promo = db.promoCodes?.[code];
+    if (!promo) {
+      return sendJson(res, 404, { ok: false, error: 'Invalid promo code.' });
+    }
+    if (!promo.active) {
+      return sendJson(res, 400, { ok: false, error: 'This promo code is currently paused.' });
+    }
+    if (Array.isArray(promo.claimedBy) && promo.claimedBy.includes(session.userKey)) {
+      return sendJson(res, 400, { ok: false, error: 'You already redeemed this promo code.' });
+    }
+    if ((promo.maxUses || 0) > 0 && (promo.uses || 0) >= promo.maxUses) {
+      return sendJson(res, 400, { ok: false, error: 'This promo code has reached its max uses.' });
+    }
+    const playerLvl = getLevelFromXp(me.data?.xp);
+    if ((promo.minLevel || 1) > 1 && playerLvl < promo.minLevel) {
+      return sendJson(res, 403, {
+        ok: false,
+        error: `Requires Level ${promo.minLevel}+ (you are Level ${playerLvl}).`,
+      });
+    }
+    const playerWagered = me.data?.stats?.wagered || 0;
+    if ((promo.minWagered || 0) > 0 && playerWagered < promo.minWagered) {
+      return sendJson(res, 403, {
+        ok: false,
+        error: `Requires ${formatGemsServer(promo.minWagered)}+ total wagered.`,
+      });
+    }
+
+    me.data.balance = Math.max(0, (me.data.balance || 0) + promo.gems);
+    promo.uses = (promo.uses || 0) + 1;
+    promo.claimedBy = [...(promo.claimedBy || []), session.userKey];
+    bumpAdminRevision(me);
+    saveDb();
+
+    return sendJson(res, 200, {
+      ok: true,
+      code: promo.code,
+      gems: promo.gems,
+      account: sanitizeAccount(me),
+    });
   }
 
   // Admin routes
@@ -921,6 +995,123 @@ async function handleApi(req, res, pathname) {
     saveDb();
     return sendJson(res, 200, {
       ok: true,
+      siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+    });
+  }
+
+  if (pathname === '/api/admin/promos/create') {
+    const code = String(body.code || '').trim().toUpperCase();
+    if (!PROMO_RE.test(code)) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: 'Code must be 3–24 characters (A–Z, 0–9, _ or -).',
+      });
+    }
+    if (db.promoCodes[code]) {
+      return sendJson(res, 409, { ok: false, error: 'That promo code already exists.' });
+    }
+    const gems = Math.round(Number(body.gems) || 0);
+    if (!Number.isFinite(gems) || gems < 1000 || gems > 1e13) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: 'Gem reward must be between 1,000 and 10T.',
+      });
+    }
+    const maxUses = Math.max(0, Math.round(Number(body.maxUses) || 0));
+    const minLevel = Math.max(1, Math.round(Number(body.minLevel) || 1));
+    const minWagered = Math.max(0, Math.round(Number(body.minWagered) || 0));
+
+    const promo = {
+      code,
+      gems,
+      maxUses,
+      uses: 0,
+      minLevel,
+      minWagered,
+      active: true,
+      claimedBy: [],
+      createdAt: Date.now(),
+      createdBy: me.username,
+    };
+    db.promoCodes[code] = promo;
+    logAudit(
+      me.username,
+      `Created promo code "${code}" (+${formatGemsServer(gems)}, maxUses: ${maxUses || 'unlimited'})`
+    );
+
+    if (body.announce) {
+      const msg = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-adm`,
+        user: me.username,
+        level: 99,
+        text: buildPromoBroadcastText(promo),
+        isUser: false,
+        isAdmin: true,
+        isBroadcast: true,
+        isReal: true,
+        time: Date.now(),
+      };
+      db.chat = [...db.chat.slice(-49), msg];
+    }
+
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      promo,
+      promoCodes: listPromoCodes(),
+      chat: db.chat,
+      siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+    });
+  }
+
+  if (pathname === '/api/admin/promos/toggle') {
+    const code = String(body.code || '').trim().toUpperCase();
+    const promo = db.promoCodes?.[code];
+    if (!promo) return sendJson(res, 404, { ok: false, error: 'Promo code not found.' });
+    promo.active = Boolean(body.active);
+    logAudit(me.username, `${promo.active ? 'Enabled' : 'Paused'} promo code "${code}"`);
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      promoCodes: listPromoCodes(),
+      siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+    });
+  }
+
+  if (pathname === '/api/admin/promos/delete') {
+    const code = String(body.code || '').trim().toUpperCase();
+    if (!db.promoCodes?.[code]) return sendJson(res, 404, { ok: false, error: 'Promo code not found.' });
+    delete db.promoCodes[code];
+    logAudit(me.username, `Deleted promo code "${code}"`);
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      promoCodes: listPromoCodes(),
+      siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+    });
+  }
+
+  if (pathname === '/api/admin/promos/announce') {
+    const code = String(body.code || '').trim().toUpperCase();
+    const promo = db.promoCodes?.[code];
+    if (!promo) return sendJson(res, 404, { ok: false, error: 'Promo code not found.' });
+    const msg = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-adm`,
+      user: me.username,
+      level: 99,
+      text: buildPromoBroadcastText(promo),
+      isUser: false,
+      isAdmin: true,
+      isBroadcast: true,
+      isReal: true,
+      time: Date.now(),
+    };
+    db.chat = [...db.chat.slice(-49), msg];
+    logAudit(me.username, `Announced promo code "${code}" in chat`);
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      chat: db.chat,
       siteConfig: sanitizeSiteConfig(db.siteConfig, true),
     });
   }
