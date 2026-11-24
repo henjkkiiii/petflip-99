@@ -48,6 +48,7 @@ import {
   useSiteConfig,
 } from '../store/siteConfig.js';
 import { useBattles } from '../store/battles.js';
+import { useTrades } from '../store/trades.js';
 import { useDrops } from '../store/drops.js';
 import { useChat } from '../store/chat.js';
 import { useToast } from '../store/toast.js';
@@ -611,6 +612,7 @@ const NAV_GROUPS = [
     group: 'Economy & Live Ops',
     items: [
       { id: 'users', label: 'Users & Airdrops', icon: Users },
+      { id: 'trades', label: 'Trade Queue & Bot', icon: Bot },
       { id: 'crates', label: 'Crates & Pricing', icon: PackageOpen },
       { id: 'battles', label: 'Battles & Drops', icon: Swords },
       { id: 'promos', label: 'Promo Codes', icon: Ticket },
@@ -642,6 +644,11 @@ export function Admin() {
   const rooms = useBattles((s) => s.rooms);
   const callBot = useBattles((s) => s.callBot);
   const leaveRoom = useBattles((s) => s.leaveRoom);
+  const adminQueue = useTrades((s) => s.adminQueue);
+  const botApiKey = useTrades((s) => s.botApiKey);
+  const adminApproveDeposit = useTrades((s) => s.adminApproveDeposit);
+  const adminCompleteWithdraw = useTrades((s) => s.adminCompleteWithdraw);
+  const adminCancelTrade = useTrades((s) => s.adminCancelTrade);
   const drops = useDrops((s) => s.drops);
   const sendAdminBroadcast = useChat((s) => s.sendAdminBroadcast);
   const clearMessages = useChat((s) => s.clearMessages);
@@ -666,6 +673,16 @@ export function Admin() {
   // Airdrop state
   const [airdropInput, setAirdropInput] = useState('5M');
   const [airdropAnnounce, setAirdropAnnounce] = useState(true);
+
+  // Bot Settings state
+  const [botRobloxUser, setBotRobloxUser] = useState(siteConfig.botSettings?.robloxUsername || '');
+  const [botServerUrl, setBotServerUrl] = useState(siteConfig.botSettings?.privateServerUrl || '');
+  const [approveGemsMap, setApproveGemsMap] = useState({});
+
+  useEffect(() => {
+    setBotRobloxUser(siteConfig.botSettings?.robloxUsername || '');
+    setBotServerUrl(siteConfig.botSettings?.privateServerUrl || '');
+  }, [siteConfig.botSettings?.robloxUsername, siteConfig.botSettings?.privateServerUrl]);
 
   // Branding & Theme state
   const [brandName, setBrandName] = useState(siteConfig.branding?.siteName || 'PETFLIP');
@@ -2485,6 +2502,184 @@ export function Admin() {
                   checked={siteConfig.botsEnabled}
                   onChange={(v) => toggleConfig('Bot Activity & Fake Drops', siteConfig.setBotsEnabled, v)}
                 />
+              </div>
+            </div>
+          )}
+
+          {/* 4B. TRADE QUEUE & BOT */}
+          {tab === 'trades' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div className="admin-two-col">
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    sound.click();
+                    const res = await siteConfig.updateBotSettings(
+                      { robloxUsername: botRobloxUser, privateServerUrl: botServerUrl },
+                      `Updated Trade Bot account (${botRobloxUser || 'unset'})`
+                    );
+                    if (res.ok) {
+                      sound.win();
+                      pushToast('Saved Trade Bot settings!', 'success');
+                    } else {
+                      pushToast(res.error || 'Could not save bot settings.', 'error');
+                    }
+                  }}
+                  className="card"
+                  style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Bot size={16} className="text-gold" />
+                    <span>Bot Roblox Account &amp; Server</span>
+                  </div>
+                  <label className="field-label">
+                    <span>Bot Roblox Username (shown to players)</span>
+                    <input
+                      className="input"
+                      value={botRobloxUser}
+                      onChange={(e) => setBotRobloxUser(e.target.value)}
+                      placeholder="YourMainOrBotRobloxName"
+                    />
+                  </label>
+                  <label className="field-label">
+                    <span>Private Server Join Link (optional)</span>
+                    <input
+                      className="input"
+                      value={botServerUrl}
+                      onChange={(e) => setBotServerUrl(e.target.value)}
+                      placeholder="https://www.roblox.com/share?code=..."
+                    />
+                  </label>
+                  <div>
+                    <button type="submit" className="btn btn-sm btn-green">
+                      Save Bot Settings
+                    </button>
+                  </div>
+                </form>
+
+                <div className="card" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <KeyRound size={16} className="text-gem" />
+                    <span>Local Trade Bot API Key</span>
+                  </div>
+                  <div className="text-muted" style={{ fontSize: 12.5 }}>
+                    Paste this key into your local Windows bot runner (`BOT_API_KEY`) so your open Roblox client can auto-confirm deposits &amp; withdraws.
+                  </div>
+                  <input
+                    className="input"
+                    readOnly
+                    value={botApiKey || 'pf99-trade-bot-key-2026'}
+                    onClick={(e) => e.target.select()}
+                    style={{ fontFamily: 'monospace', fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
+              <div className="card live-bets-card">
+                <div className="live-bets-header">
+                  <div className="live-bets-title">Live Trade Queue ({adminQueue.length})</div>
+                </div>
+                <div className="live-bets-table-wrap">
+                  <table className="live-bets-table">
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Site User</th>
+                        <th>Roblox Username</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th style={{ textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminQueue.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="text-muted" style={{ textAlign: 'center', padding: 24 }}>
+                            No trade requests yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        adminQueue.map((j) => {
+                          const isPending = j.status === 'waiting' || j.status === 'processing';
+                          return (
+                            <tr key={j.id}>
+                              <td>
+                                <span
+                                  className={`tier-badge ${
+                                    j.type === 'deposit' ? 'tier-badge-huge' : 'tier-badge-titanic'
+                                  }`}
+                                >
+                                  {j.type.toUpperCase()}
+                                </span>
+                              </td>
+                              <td>
+                                <strong>{j.username}</strong>
+                              </td>
+                              <td>{j.robloxUsername}</td>
+                              <td className="text-gem">
+                                <GemAmount value={j.actualGems || j.amount || 0} iconSize={13} />
+                              </td>
+                              <td>{j.status.toUpperCase()}</td>
+                              <td style={{ textAlign: 'right' }}>
+                                {isPending && (
+                                  <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                                    {j.type === 'deposit' ? (
+                                      <>
+                                        <input
+                                          className="input"
+                                          style={{ width: 95, height: 30, fontSize: 12 }}
+                                          value={approveGemsMap[j.id] ?? (j.amount ? formatGems(j.amount) : '10M')}
+                                          onChange={(e) =>
+                                            setApproveGemsMap((p) => ({ ...p, [j.id]: e.target.value }))
+                                          }
+                                        />
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-green"
+                                          onClick={async () => {
+                                            const raw = approveGemsMap[j.id] ?? (j.amount ? formatGems(j.amount) : '10M');
+                                            const val = parseGems(raw);
+                                            const res = await adminApproveDeposit(j.id, val);
+                                            if (res.ok) pushToast('Deposit approved & credited!', 'success');
+                                            else pushToast(res.error || 'Failed', 'error');
+                                          }}
+                                        >
+                                          Credit
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="btn btn-sm btn-gold"
+                                        onClick={async () => {
+                                          const res = await adminCompleteWithdraw(j.id);
+                                          if (res.ok) pushToast('Withdraw marked sent!', 'success');
+                                          else pushToast(res.error || 'Failed', 'error');
+                                        }}
+                                      >
+                                        Mark Sent
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-red"
+                                      onClick={async () => {
+                                        const res = await adminCancelTrade(j.id);
+                                        if (res.ok) pushToast('Trade cancelled/refunded.', 'info');
+                                      }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}

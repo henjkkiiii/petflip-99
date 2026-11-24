@@ -16,6 +16,7 @@ import { useDrops } from './drops.js';
 import { useToast } from './toast.js';
 import { setBattleBridge, useBattles } from './battles.js';
 import { setCoinflipBridge, useCoinflips } from './coinflips.js';
+import { setTradeBridge, useTrades } from './trades.js';
 
 let syncTimer = null;
 let pendingSnapshot = null;
@@ -27,7 +28,7 @@ let pollInFlight = false;
 
 export const useAuth = create((set, get) => {
   const applySharedState = (
-    { me, userKey, siteConfig, chat, drops, battles, coinflips, accounts, promoCodes, hadToken, recoveryBlob },
+    { me, userKey, siteConfig, chat, drops, battles, coinflips, myTrades, tradeQueue, botApiKey, accounts, promoCodes, hadToken, recoveryBlob },
     forceReloadMe = false,
     sentToken = ''
   ) => {
@@ -46,6 +47,7 @@ export const useAuth = create((set, get) => {
     if (Array.isArray(coinflips)) {
       useCoinflips.getState().syncServerCoinflips(coinflips);
     }
+    useTrades.getState().syncFromState({ myTrades, tradeQueue, botApiKey });
     if (recoveryBlob) {
       setRecoveryBlob(recoveryBlob);
     }
@@ -301,6 +303,29 @@ export const useAuth = create((set, get) => {
         accounts: { ...state.accounts, [curKey]: res.account },
       }));
       useGame.getState().loadAccountData(res.account);
+    },
+  });
+
+  setTradeBridge({
+    applyAccountFromServer: (res) => {
+      if (res?.recoveryBlob) setRecoveryBlob(res.recoveryBlob);
+      if (!res?.account) return;
+      const curKey = get().currentUserKey;
+      if (!curKey) return;
+      pendingSnapshot = null;
+      if (syncTimer) {
+        clearTimeout(syncTimer);
+        syncTimer = null;
+      }
+      const nextRev = Number(res.account.adminRevision) || get().activeAdminRevision || 1;
+      set((state) => ({
+        activeAdminRevision: nextRev,
+        accounts: { ...state.accounts, [curKey]: res.account },
+      }));
+      useGame.getState().loadAccountData(res.account);
+    },
+    applyAccountsMap: (accountsMap) => {
+      if (accountsMap) applyAdminAccountResponse({ accounts: accountsMap });
     },
   });
 

@@ -98,6 +98,10 @@ export const DEFAULT_SITE_CONFIG = {
     showPromoSidebar: true,
     showFairnessLink: true,
   },
+  botSettings: {
+    robloxUsername: '',
+    privateServerUrl: '',
+  },
   auditLog: [],
 };
 
@@ -164,6 +168,10 @@ export const useSiteConfig = create((set, get) => {
         ...DEFAULT_SITE_CONFIG.ui,
         ...(cfg.ui || {}),
       };
+      const nextBotSettings = {
+        ...DEFAULT_SITE_CONFIG.botSettings,
+        ...(cfg.botSettings || {}),
+      };
       set({
         startingBalance: cfg.startingBalance ?? DEFAULT_SITE_CONFIG.startingBalance,
         allowDeposits: cfg.allowDeposits ?? DEFAULT_SITE_CONFIG.allowDeposits,
@@ -179,6 +187,7 @@ export const useSiteConfig = create((set, get) => {
         theme: nextTheme,
         games: nextGames,
         ui: nextUi,
+        botSettings: nextBotSettings,
         auditLog: Array.isArray(cfg.auditLog) ? cfg.auditLog : [],
       });
       applyThemeAndBrandingToDom(nextTheme, nextBranding);
@@ -311,6 +320,10 @@ export const useSiteConfig = create((set, get) => {
 
     updateUiConfig(uiPatch, auditLabel = 'Updated UI visibility settings') {
       return pushConfigPatch({ ui: uiPatch }, auditLabel);
+    },
+
+    updateBotSettings(botPatch, auditLabel = 'Updated Trade Bot settings') {
+      return pushConfigPatch({ botSettings: botPatch }, auditLabel);
     },
 
     resetAllConfig() {

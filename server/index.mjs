@@ -17,6 +17,7 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const SESSION_TTL_SEC = Math.floor(SESSION_TTL_MS / 1000);
 const SESSION_COOKIE = 'pf99_session';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'petflip99-hmac-session-secret-v1';
+const BOT_API_KEY = process.env.BOT_API_KEY || 'pf99-trade-bot-key-2026';
 const RECOVERY_KEY = crypto.createHash('sha256').update(`${SESSION_SECRET}:recovery-v1`).digest();
 const INITIAL_ADMIN_BALANCE = 100_000_000;
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
@@ -169,6 +170,10 @@ const DEFAULT_SITE_CONFIG = {
     showPromoSidebar: true,
     showFairnessLink: true,
   },
+  botSettings: {
+    robloxUsername: '',
+    privateServerUrl: '',
+  },
   auditLog: [],
 };
 
@@ -282,6 +287,15 @@ function sanitizeUiConfig(u) {
   };
 }
 
+function sanitizeBotSettings(b) {
+  const src = b && typeof b === 'object' ? b : {};
+  const rawUrl = String(src.privateServerUrl || '').trim().slice(0, 240);
+  return {
+    robloxUsername: String(src.robloxUsername || '').trim().slice(0, 32),
+    privateServerUrl: rawUrl && /^https?:\/\//i.test(rawUrl) ? rawUrl : '',
+  };
+}
+
 function sanitizeSiteConfig(cfg, isAdmin) {
   const merged = {
     ...DEFAULT_SITE_CONFIG,
@@ -298,6 +312,7 @@ function sanitizeSiteConfig(cfg, isAdmin) {
     theme: sanitizeTheme(cfg?.theme),
     games: sanitizeGamesConfig(cfg?.games),
     ui: sanitizeUiConfig(cfg?.ui),
+    botSettings: sanitizeBotSettings(cfg?.botSettings),
   };
   merged.auditLog = isAdmin && Array.isArray(cfg?.auditLog) ? cfg.auditLog.slice(0, 150) : [];
   return merged;
@@ -322,6 +337,8 @@ function loadOrCreateDb() {
   if (!db.promoCodes || typeof db.promoCodes !== 'object') db.promoCodes = {};
   if (!Array.isArray(db.battles)) db.battles = [];
   if (!Array.isArray(db.coinflips)) db.coinflips = [];
+  if (!Array.isArray(db.tradeQueue)) db.tradeQueue = [];
+  if (!db.processedBotTx || typeof db.processedBotTx !== 'object') db.processedBotTx = {};
   if (!db.restoredUsers || typeof db.restoredUsers !== 'object') db.restoredUsers = {};
   if (!db.preservedProfiles || typeof db.preservedProfiles !== 'object') db.preservedProfiles = {};
   if (!Array.isArray(db.chat)) db.chat = [];
@@ -905,9 +922,151 @@ function listBattles() {
   return db.battles;
 }
 
+function pruneTradeQueue() {
+  const now = Date.now();
+  let changed = false;
+  for (const job of db.tradeQueue || []) {
+    if (!job) continue;
+    if ((job.status === 'waiting' || job.status === 'processing') && job.expiresAt && now > job.expiresAt) {
+      job.status = 'expired';
+      job.finishedAt = now;
+      job.note = 'Timed out (10m)';
+      if (job.type === 'withdraw' && !job.refunded) {
+        job.refunded = true;
+        const acc = db.accounts[job.userKey];
+        if (acc) {
+          if (!acc.data) acc.data = createDefaultAccountData(0);
+          acc.data.balance = Math.max(0, (acc.data.balance || 0) + job.amount);
+          bumpAdminRevision(acc, 'trade');
+        }
+      }
+      changed = true;
+    }
+  }
+  const cutoff = now - 24 * 60 * 60 * 1000;
+  const before = (db.tradeQueue || []).length;
+  db.tradeQueue = (db.tradeQueue || [])
+    .filter((j) => j && (j.status === 'waiting' || j.status === 'processing' || (j.createdAt || 0) > cutoff))
+    .slice(0, 100);
+  if (db.tradeQueue.length !== before) changed = true;
+  if (changed) saveDb();
+  return db.tradeQueue;
+}
+
+function completeDepositJob(job, gems, txId, actorName = 'TradeBot') {
+  if (!job || job.status === 'completed') return false;
+  if (txId && db.processedBotTx[txId]) return false;
+  const cleanGems = Math.max(0, Math.round(Number(gems) || 0));
+  if (cleanGems <= 0) return false;
+  const acc = db.accounts[job.userKey];
+  if (!acc) return false;
+  if (!acc.data) acc.data = createDefaultAccountData(0);
+  acc.data.balance = Math.max(0, (acc.data.balance || 0) + cleanGems);
+  bumpAdminRevision(acc, 'trade');
+  job.status = 'completed';
+  job.actualGems = cleanGems;
+  job.txId = txId || `tx-${Date.now()}`;
+  job.completedBy = actorName;
+  job.finishedAt = Date.now();
+  if (txId) db.processedBotTx[txId] = job.finishedAt;
+  logAudit(actorName, `Deposit trade completed for ${acc.username} (${job.robloxUsername}): +${formatGemsServer(cleanGems)} gems`);
+  return true;
+}
+
+function completeWithdrawJob(job, txId, actorName = 'TradeBot') {
+  if (!job || job.status === 'completed' || job.status === 'cancelled' || job.status === 'expired') return false;
+  if (txId && db.processedBotTx[txId]) return false;
+  job.status = 'completed';
+  job.actualGems = job.amount;
+  job.txId = txId || `tx-${Date.now()}`;
+  job.completedBy = actorName;
+  job.finishedAt = Date.now();
+  if (txId) db.processedBotTx[txId] = job.finishedAt;
+  logAudit(actorName, `Withdraw trade sent to ${job.username} (${job.robloxUsername}): ${formatGemsServer(job.amount)} gems`);
+  return true;
+}
+
+function cancelTradeJob(job, reason = 'Cancelled', actorName = 'System') {
+  if (!job || job.status === 'completed' || job.status === 'cancelled') return false;
+  job.status = 'cancelled';
+  job.note = String(reason || 'Cancelled').slice(0, 120);
+  job.finishedAt = Date.now();
+  if (job.type === 'withdraw' && !job.refunded) {
+    job.refunded = true;
+    const acc = db.accounts[job.userKey];
+    if (acc) {
+      if (!acc.data) acc.data = createDefaultAccountData(0);
+      acc.data.balance = Math.max(0, (acc.data.balance || 0) + job.amount);
+      bumpAdminRevision(acc, 'trade');
+    }
+  }
+  logAudit(actorName, `Cancelled ${job.type} trade for ${job.username} (${job.note})`);
+  return true;
+}
+
 async function handleApi(req, res, pathname) {
   if (req.method === 'GET' && pathname === '/api/health') {
     return sendJson(res, 200, { ok: true });
+  }
+
+  // Bot API routes (authenticated via x-bot-key header)
+  if (pathname.startsWith('/api/bot/')) {
+    const providedKey = String(req.headers['x-bot-key'] || '');
+    if (!providedKey || providedKey !== BOT_API_KEY) {
+      return sendJson(res, 401, { ok: false, error: 'Invalid or missing x-bot-key.' });
+    }
+    pruneTradeQueue();
+    if (req.method === 'GET' && pathname === '/api/bot/queue') {
+      const active = (db.tradeQueue || []).filter(
+        (j) => j.status === 'waiting' || j.status === 'processing'
+      );
+      return sendJson(res, 200, { ok: true, jobs: active });
+    }
+    if (req.method !== 'POST') {
+      return sendJson(res, 405, { ok: false, error: 'Method not allowed.' });
+    }
+    let body = {};
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { ok: false, error: 'Invalid JSON body.' });
+    }
+    const job = (db.tradeQueue || []).find((j) => j.id === body.jobId);
+    if (!job) return sendJson(res, 404, { ok: false, error: 'Trade job not found.' });
+
+    if (pathname === '/api/bot/claim') {
+      if (job.status !== 'waiting' && job.status !== 'processing') {
+        return sendJson(res, 400, { ok: false, error: `Job is already ${job.status}.` });
+      }
+      job.status = 'processing';
+      job.claimedAt = Date.now();
+      saveDb();
+      return sendJson(res, 200, { ok: true, job });
+    }
+    if (pathname === '/api/bot/deposit-complete') {
+      if (job.type !== 'deposit') return sendJson(res, 400, { ok: false, error: 'Not a deposit job.' });
+      if (!completeDepositJob(job, body.gems, body.txId, 'TradeBot')) {
+        return sendJson(res, 400, { ok: false, error: 'Could not complete deposit (duplicate tx or invalid gems).' });
+      }
+      saveDb();
+      return sendJson(res, 200, { ok: true, job });
+    }
+    if (pathname === '/api/bot/withdraw-complete') {
+      if (job.type !== 'withdraw') return sendJson(res, 400, { ok: false, error: 'Not a withdraw job.' });
+      if (!completeWithdrawJob(job, body.txId, 'TradeBot')) {
+        return sendJson(res, 400, { ok: false, error: 'Could not complete withdraw.' });
+      }
+      saveDb();
+      return sendJson(res, 200, { ok: true, job });
+    }
+    if (pathname === '/api/bot/cancel') {
+      if (!cancelTradeJob(job, body.reason || 'Cancelled by bot', 'TradeBot')) {
+        return sendJson(res, 400, { ok: false, error: 'Could not cancel trade job.' });
+      }
+      saveDb();
+      return sendJson(res, 200, { ok: true, job });
+    }
+    return sendJson(res, 404, { ok: false, error: 'Unknown bot endpoint.' });
   }
 
   let session = getSessionAccount(req);
@@ -917,6 +1076,7 @@ async function handleApi(req, res, pathname) {
   if (req.method === 'GET' && pathname === '/api/state') {
     settleDueBattles();
     settleDueCoinflips();
+    pruneTradeQueue();
 
     if (!session) {
       const signed = findValidSignedToken(req);
@@ -977,6 +1137,11 @@ async function handleApi(req, res, pathname) {
       drops: db.drops.slice(0, 24),
       battles: listBattles(),
       coinflips: listCoinflips(),
+      myTrades: session
+        ? (db.tradeQueue || []).filter((j) => j.userKey === session.userKey).slice(0, 15)
+        : [],
+      tradeQueue: isAdmin ? db.tradeQueue || [] : null,
+      botApiKey: isAdmin ? BOT_API_KEY : null,
       accounts: isAdmin ? sanitizeAccountsMap(db.accounts) : null,
       promoCodes: isAdmin ? listPromoCodes() : null,
       onlineClients: activeClients.size,
@@ -1612,6 +1777,78 @@ async function handleApi(req, res, pathname) {
     });
   }
 
+  if (pathname === '/api/trades/request') {
+    pruneTradeQueue();
+    const type = body.type === 'withdraw' ? 'withdraw' : 'deposit';
+    const robloxUsername = String(body.robloxUsername || '').trim().slice(0, 32);
+    if (!robloxUsername || robloxUsername.length < 3) {
+      return sendJson(res, 400, { ok: false, error: 'Enter your exact Roblox username (3–32 chars).' });
+    }
+    const existing = (db.tradeQueue || []).find(
+      (j) => j.userKey === session.userKey && (j.status === 'waiting' || j.status === 'processing')
+    );
+    if (existing) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: `You already have an active ${existing.type} trade in queue. Cancel or finish it first.`,
+      });
+    }
+    const amount = Math.round(Number(body.amount) || 0);
+    if (type === 'withdraw') {
+      if (!Number.isFinite(amount) || amount < 1000) {
+        return sendJson(res, 400, { ok: false, error: 'Minimum trade withdraw is 1,000 gems.' });
+      }
+      if ((me.data?.balance || 0) < amount) {
+        return sendJson(res, 400, { ok: false, error: 'Insufficient gem balance for trade withdraw.' });
+      }
+      if (!me.data) me.data = createDefaultAccountData(0);
+      me.data.balance = Math.max(0, (me.data.balance || 0) - amount);
+      bumpAdminRevision(me, 'trade');
+    }
+    const now = Date.now();
+    const job = {
+      id: `tr-${now}-${crypto.randomBytes(3).toString('hex')}`,
+      type,
+      userKey: session.userKey,
+      username: me.username,
+      robloxUsername,
+      amount: Math.max(0, amount),
+      actualGems: 0,
+      status: 'waiting',
+      refunded: false,
+      createdAt: now,
+      expiresAt: now + 10 * 60 * 1000,
+    };
+    db.tradeQueue.unshift(job);
+    db.tradeQueue = db.tradeQueue.slice(0, 100);
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      job,
+      myTrades: db.tradeQueue.filter((j) => j.userKey === session.userKey).slice(0, 15),
+      account: sanitizeAccount(me),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
+    });
+  }
+
+  if (pathname === '/api/trades/cancel') {
+    const job = (db.tradeQueue || []).find(
+      (j) => j.id === body.jobId && (j.userKey === session.userKey || isAdmin)
+    );
+    if (!job) return sendJson(res, 404, { ok: false, error: 'Trade ticket not found.' });
+    if (!cancelTradeJob(job, 'Cancelled by user', me.username)) {
+      return sendJson(res, 400, { ok: false, error: `Cannot cancel a ${job.status} trade.` });
+    }
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      job,
+      myTrades: db.tradeQueue.filter((j) => j.userKey === session.userKey).slice(0, 15),
+      account: sanitizeAccount(me),
+      recoveryBlob: encryptRecoveryBlob(session.userKey, me),
+    });
+  }
+
   if (pathname === '/api/coinflips/create') {
     if (db.siteConfig.maintenanceMode && !isAdmin) {
       return sendJson(res, 403, { ok: false, error: 'Site is in Maintenance Mode.' });
@@ -2168,6 +2405,12 @@ async function handleApi(req, res, pathname) {
         ...patch.ui,
       });
     }
+    if (patch.botSettings && typeof patch.botSettings === 'object') {
+      db.siteConfig.botSettings = sanitizeBotSettings({
+        ...(db.siteConfig.botSettings || {}),
+        ...patch.botSettings,
+      });
+    }
     if (body.auditAction) {
       logAudit(me.username, String(body.auditAction).slice(0, 200));
     }
@@ -2238,6 +2481,51 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, {
       ok: true,
       drops: [],
+      siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+    });
+  }
+
+  if (pathname === '/api/admin/trades/approve-deposit') {
+    const job = (db.tradeQueue || []).find((j) => j.id === body.jobId);
+    if (!job || job.type !== 'deposit') return sendJson(res, 404, { ok: false, error: 'Deposit job not found.' });
+    const gems = Math.round(Number(body.gems ?? job.amount) || 0);
+    if (!completeDepositJob(job, gems, null, me.username)) {
+      return sendJson(res, 400, { ok: false, error: 'Enter a valid gem amount (> 0).' });
+    }
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      tradeQueue: db.tradeQueue,
+      accounts: sanitizeAccountsMap(db.accounts),
+      siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+    });
+  }
+
+  if (pathname === '/api/admin/trades/complete-withdraw') {
+    const job = (db.tradeQueue || []).find((j) => j.id === body.jobId);
+    if (!job || job.type !== 'withdraw') return sendJson(res, 404, { ok: false, error: 'Withdraw job not found.' });
+    if (!completeWithdrawJob(job, null, me.username)) {
+      return sendJson(res, 400, { ok: false, error: 'Could not mark withdraw complete.' });
+    }
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      tradeQueue: db.tradeQueue,
+      siteConfig: sanitizeSiteConfig(db.siteConfig, true),
+    });
+  }
+
+  if (pathname === '/api/admin/trades/cancel') {
+    const job = (db.tradeQueue || []).find((j) => j.id === body.jobId);
+    if (!job) return sendJson(res, 404, { ok: false, error: 'Trade job not found.' });
+    if (!cancelTradeJob(job, body.reason || 'Cancelled by admin', me.username)) {
+      return sendJson(res, 400, { ok: false, error: 'Could not cancel trade job.' });
+    }
+    saveDb();
+    return sendJson(res, 200, {
+      ok: true,
+      tradeQueue: db.tradeQueue,
+      accounts: sanitizeAccountsMap(db.accounts),
       siteConfig: sanitizeSiteConfig(db.siteConfig, true),
     });
   }

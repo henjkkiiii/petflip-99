@@ -11,7 +11,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server/index.mjs",
-    "fetch-assets": "node scripts/fetch-ps99.mjs"
+    "fetch-assets": "node scripts/fetch-ps99.mjs",
+    "bot:calibrate": "node bot/calibrate.mjs",
+    "bot": "node bot/trade-bot.mjs"
   },
   "dependencies": {
     "canvas-confetti": "^1.9.3",
