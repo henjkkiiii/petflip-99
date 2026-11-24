@@ -11,14 +11,30 @@ export function setTradeBridge(bridge) {
 export const useTrades = create((set, get) => ({
   myTrades: [],
   adminQueue: [],
+  adminNotifications: [],
   botApiKey: '',
 
-  syncFromState({ myTrades, tradeQueue, botApiKey }) {
+  syncFromState({ myTrades, tradeQueue, adminNotifications, botApiKey }) {
     const patch = {};
     if (Array.isArray(myTrades)) patch.myTrades = myTrades;
     if (Array.isArray(tradeQueue)) patch.adminQueue = tradeQueue;
+    if (Array.isArray(adminNotifications)) patch.adminNotifications = adminNotifications;
     if (typeof botApiKey === 'string' && botApiKey) patch.botApiKey = botApiKey;
     if (Object.keys(patch).length > 0) set(patch);
+  },
+
+  async markNotificationsRead(id = null) {
+    const res = await apiPost('/api/admin/notifications/read', { id });
+    if (res.ok && Array.isArray(res.adminNotifications)) {
+      set({ adminNotifications: res.adminNotifications });
+    }
+    return res;
+  },
+
+  async clearNotifications() {
+    const res = await apiPost('/api/admin/notifications/clear', {});
+    if (res.ok) set({ adminNotifications: [] });
+    return res;
   },
 
   async requestTrade({ type, robloxUsername, amount, pets = [], petUids = [] }) {

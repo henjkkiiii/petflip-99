@@ -28,7 +28,7 @@ let pollInFlight = false;
 
 export const useAuth = create((set, get) => {
   const applySharedState = (
-    { me, userKey, siteConfig, chat, drops, battles, coinflips, myTrades, tradeQueue, botApiKey, accounts, promoCodes, hadToken, recoveryBlob },
+    { me, userKey, siteConfig, chat, drops, battles, coinflips, myTrades, tradeQueue, adminNotifications, botApiKey, accounts, promoCodes, hadToken, recoveryBlob },
     forceReloadMe = false,
     sentToken = ''
   ) => {
@@ -47,7 +47,7 @@ export const useAuth = create((set, get) => {
     if (Array.isArray(coinflips)) {
       useCoinflips.getState().syncServerCoinflips(coinflips);
     }
-    useTrades.getState().syncFromState({ myTrades, tradeQueue, botApiKey });
+    useTrades.getState().syncFromState({ myTrades, tradeQueue, adminNotifications, botApiKey });
     if (recoveryBlob) {
       setRecoveryBlob(recoveryBlob);
     }

@@ -130,10 +130,19 @@ function isFairnessModal(msg) {
   );
 }
 
-async function waitForConfirmButton(timeoutMs = 35_000) {
+function isCancelledModal(msg) {
+  return msg.includes('cancelled') || msg.includes('canceled');
+}
+
+async function waitForConfirmButton(timeoutMs = 25_000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const modalText = ocrRect(coords.completedBox).toLowerCase();
+    if (isCancelledModal(modalText)) {
+      console.log('  Detected "cancelled the trade!" -> clicking Ok! & refunding.');
+      if (coords.okPopupBtn) clickPoint(coords.okPopupBtn);
+      return 'cancelled';
+    }
     if (
       (modalText.includes('recently modified') || modalText.includes('verify offer')) &&
       coords.okPopupBtn
@@ -153,17 +162,22 @@ async function waitForConfirmButton(timeoutMs = 35_000) {
     }
     const btnText = ocrRect(coords.actionBtnBox).toLowerCase();
     if (btnText.includes('confirm') && !btnText.includes('unconfirm')) {
-      return true;
+      return 'confirm';
     }
     await sleep(600);
   }
-  return false;
+  return 'timeout';
 }
 
 async function waitForTradeCompleted(timeoutMs = 25_000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     const msg = ocrRect(coords.completedBox).toLowerCase();
+    if (isCancelledModal(msg)) {
+      console.log('  Detected "cancelled the trade!" -> clicking Ok! & refunding.');
+      if (coords.okPopupBtn) clickPoint(coords.okPopupBtn);
+      return 'cancelled';
+    }
     if (isFairnessModal(msg) && coords.modalYesBtn) {
       console.log(`  Handling fairness/confirm popup ("${msg}") -> clicking Yes!`);
       await sleep(250);
@@ -183,15 +197,15 @@ async function waitForTradeCompleted(timeoutMs = 25_000) {
         console.log('  Closing "Friend user?" popup -> No');
         clickPoint(coords.friendNoBtn);
       }
-      return true;
+      return 'completed';
     }
     if (msg.includes('friend') && coords.friendNoBtn) {
       clickPoint(coords.friendNoBtn);
-      return true;
+      return 'completed';
     }
     await sleep(600);
   }
-  return false;
+  return 'timeout';
 }
 
 console.log('=== PETFLIP 99 Main-Monitor Trade Bot ===');
@@ -201,10 +215,22 @@ console.log('Watching Trade Queue & Roblox Trade Window every 2s...\n');
 
 let lastQueueSig = '';
 let recentPopupJob = null;
+let lastStockSync = 0;
+
+async function syncHudGemsIfNeeded() {
+  if (!coords.myHudGemsBox || Date.now() - lastStockSync < 15_000) return;
+  lastStockSync = Date.now();
+  const hudText = ocrRect(coords.myHudGemsBox);
+  const gems = parseOcrGems(hudText);
+  if (gems > 0) {
+    await api('/api/bot/stock', 'POST', { gems }).catch(() => null);
+  }
+}
 
 async function loop() {
   while (true) {
     try {
+      await syncHudGemsIfNeeded();
       const q = await api('/api/bot/queue');
       const jobs = q?.jobs || [];
       const sig = jobs.map((j) => `${j.id}:${j.status}`).join('|');
@@ -280,11 +306,14 @@ async function loop() {
             clickPoint(coords.readyBtn);
             console.log('  Clicked Ready! Waiting for other player to Ready up -> Confirm...');
 
-            const confirmAppeared = await waitForConfirmButton(25_000);
-            if (!confirmAppeared) {
-              console.log('  [TIMEOUT] Other player did not Ready up in time -> Cancelling.');
-              clickPoint(coords.declineBtn);
-              await api('/api/bot/cancel', 'POST', { jobId: match.id, reason: 'Timed out waiting for Ready' });
+            const confirmState = await waitForConfirmButton(25_000);
+            if (confirmState !== 'confirm') {
+              console.log(`  [${confirmState.toUpperCase()}] Stopping withdraw & refunding.`);
+              if (confirmState === 'timeout') clickPoint(coords.declineBtn);
+              await api('/api/bot/cancel', 'POST', {
+                jobId: match.id,
+                reason: confirmState === 'cancelled' ? 'Player cancelled trade' : 'Timed out waiting for Ready',
+              });
               continue;
             }
 
@@ -311,9 +340,13 @@ async function loop() {
               }
               clickPoint(coords.confirmBtn);
               console.log('  Clicked Confirm! Verifying trade completion...');
-              const completed = await waitForTradeCompleted(25_000);
-              if (!completed) {
-                console.log('  [ABORT] Did NOT see "Trade successfully completed!" — NOT marking sent.');
+              const doneState = await waitForTradeCompleted(25_000);
+              if (doneState !== 'completed') {
+                console.log(`  [${doneState.toUpperCase()}] Trade not completed -> refunding & stopping.`);
+                await api('/api/bot/cancel', 'POST', {
+                  jobId: match.id,
+                  reason: doneState === 'cancelled' ? 'Player cancelled trade' : 'Trade did not complete',
+                });
                 continue;
               }
               await api('/api/bot/withdraw-complete', 'POST', {
@@ -330,8 +363,16 @@ async function loop() {
             // Deposit: STRICTLY wait until opponent clicks Ready! (green Ready! pixels OR OCR)
             console.log('  Waiting for opponent to finish adding items & click Ready!...');
             let opponentReady = false;
+            let inGameCancelled = false;
             const waitStart = Date.now();
             while (Date.now() - waitStart < 45_000) {
+              const modalText = ocrRect(coords.completedBox).toLowerCase();
+              if (isCancelledModal(modalText)) {
+                console.log('  Detected "cancelled the trade!" -> clicking Ok! & stopping.');
+                if (coords.okPopupBtn) clickPoint(coords.okPopupBtn);
+                inGameCancelled = true;
+                break;
+              }
               const greenPx = checkGreenCount(coords.theirReadyBox);
               const readyText = ocrRect(coords.theirReadyBox || coords.theirOfferBox).toLowerCase();
               console.log(`  [WAIT] greenPx=${greenPx}, readyText="${readyText}"`);
@@ -342,10 +383,15 @@ async function loop() {
               await sleep(600);
             }
 
-            if (!opponentReady) {
-              console.log('  [TIMEOUT] Opponent did not click Ready! in time -> Cancelling.');
-              clickPoint(coords.declineBtn);
-              await api('/api/bot/cancel', 'POST', { jobId: match.id, reason: 'Opponent did not Ready up' });
+            if (inGameCancelled || !opponentReady) {
+              if (!inGameCancelled) {
+                console.log('  [TIMEOUT] Opponent did not click Ready! in time -> Cancelling.');
+                clickPoint(coords.declineBtn);
+              }
+              await api('/api/bot/cancel', 'POST', {
+                jobId: match.id,
+                reason: inGameCancelled ? 'Player cancelled trade' : 'Opponent did not Ready up',
+              });
               continue;
             }
 
@@ -379,11 +425,14 @@ async function loop() {
 
             clickPoint(coords.readyBtn);
             console.log('  Clicked Ready! Waiting for other player to Ready up -> Confirm...');
-            const confirmAppeared = await waitForConfirmButton(25_000);
-            if (!confirmAppeared) {
-              console.log('  [TIMEOUT] Other player did not Ready up -> Cancelling.');
-              clickPoint(coords.declineBtn);
-              await api('/api/bot/cancel', 'POST', { jobId: match.id, reason: 'Timed out waiting for Ready' });
+            const confirmState = await waitForConfirmButton(25_000);
+            if (confirmState !== 'confirm') {
+              console.log(`  [${confirmState.toUpperCase()}] Stopping deposit.`);
+              if (confirmState === 'timeout') clickPoint(coords.declineBtn);
+              await api('/api/bot/cancel', 'POST', {
+                jobId: match.id,
+                reason: confirmState === 'cancelled' ? 'Player cancelled trade' : 'Timed out waiting for Confirm',
+              });
               continue;
             }
 
@@ -395,9 +444,13 @@ async function loop() {
 
             clickPoint(coords.confirmBtn);
             console.log('  Clicked Confirm! Verifying trade completion...');
-            const completed = await waitForTradeCompleted(25_000);
-            if (!completed) {
-              console.log('  [ABORT] Did NOT see "Trade successfully completed!" — NOT crediting gems/pets.');
+            const doneState = await waitForTradeCompleted(25_000);
+            if (doneState !== 'completed') {
+              console.log(`  [${doneState.toUpperCase()}] Stopping deposit (NOT crediting).`);
+              await api('/api/bot/cancel', 'POST', {
+                jobId: match.id,
+                reason: doneState === 'cancelled' ? 'Player cancelled trade' : 'Trade did not complete',
+              });
               continue;
             }
             await api('/api/bot/deposit-complete', 'POST', {

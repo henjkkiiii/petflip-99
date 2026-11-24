@@ -651,10 +651,13 @@ export function Admin() {
   const callBot = useBattles((s) => s.callBot);
   const leaveRoom = useBattles((s) => s.leaveRoom);
   const adminQueue = useTrades((s) => s.adminQueue);
+  const adminNotifications = useTrades((s) => s.adminNotifications);
   const botApiKey = useTrades((s) => s.botApiKey);
   const adminApproveDeposit = useTrades((s) => s.adminApproveDeposit);
   const adminCompleteWithdraw = useTrades((s) => s.adminCompleteWithdraw);
   const adminCancelTrade = useTrades((s) => s.adminCancelTrade);
+  const markNotificationsRead = useTrades((s) => s.markNotificationsRead);
+  const clearNotifications = useTrades((s) => s.clearNotifications);
   const drops = useDrops((s) => s.drops);
   const sendAdminBroadcast = useChat((s) => s.sendAdminBroadcast);
   const clearMessages = useChat((s) => s.clearMessages);
@@ -683,12 +686,19 @@ export function Admin() {
   // Bot Settings state
   const [botRobloxUser, setBotRobloxUser] = useState(siteConfig.botSettings?.robloxUsername || '');
   const [botServerUrl, setBotServerUrl] = useState(siteConfig.botSettings?.privateServerUrl || '');
+  const [botStockGems, setBotStockGems] = useState(() => formatGems(siteConfig.botStock?.gems ?? 867_000_000));
+  const [botStockPetsText, setBotStockPetsText] = useState(() => (siteConfig.botStock?.pets || []).join('\n'));
   const [approveGemsMap, setApproveGemsMap] = useState({});
 
   useEffect(() => {
     setBotRobloxUser(siteConfig.botSettings?.robloxUsername || '');
     setBotServerUrl(siteConfig.botSettings?.privateServerUrl || '');
   }, [siteConfig.botSettings?.robloxUsername, siteConfig.botSettings?.privateServerUrl]);
+
+  useEffect(() => {
+    setBotStockGems(formatGems(siteConfig.botStock?.gems ?? 867_000_000));
+    setBotStockPetsText((siteConfig.botStock?.pets || []).join('\n'));
+  }, [siteConfig.botStock?.gems, siteConfig.botStock?.pets]);
 
   // Branding & Theme state
   const [brandName, setBrandName] = useState(siteConfig.branding?.siteName || 'PETFLIP');
@@ -1233,6 +1243,61 @@ export function Admin() {
         </header>
 
         <div className="admin-dash-content">
+          {adminNotifications.length > 0 && (
+            <div
+              className="card"
+              style={{
+                padding: '12px 16px',
+                borderColor: 'rgba(255, 197, 49, 0.45)',
+                background: 'linear-gradient(90deg, rgba(255, 197, 49, 0.12), rgba(79, 107, 255, 0.08))',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, color: 'var(--gold)' }}>
+                  <Megaphone size={16} />
+                  <span>Admin Restock Notifications ({adminNotifications.length})</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button type="button" className="btn btn-sm btn-outline" onClick={() => setTab('trades')}>
+                    Open Trade Queue
+                  </button>
+                  <button type="button" className="btn btn-sm btn-red" onClick={clearNotifications}>
+                    Dismiss All
+                  </button>
+                </div>
+              </div>
+              {adminNotifications.slice(0, 4).map((n) => (
+                <div
+                  key={n.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    fontSize: 12.5,
+                    paddingTop: 6,
+                    borderTop: '1px solid rgba(255,255,255,0.08)',
+                  }}
+                >
+                  <div>
+                    <strong>{n.title}:</strong> {n.message}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    style={{ height: 24, padding: '0 8px', fontSize: 11 }}
+                    onClick={() => markNotificationsRead(n.id)}
+                  >
+                    {n.read ? 'Read' : 'Mark Read'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 1. OVERVIEW */}
           {tab === 'overview' && (
             <>
@@ -2580,6 +2645,78 @@ export function Admin() {
                   />
                 </div>
               </div>
+
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const parsedGems = parseGems(botStockGems);
+                  const petsList = botStockPetsText
+                    .split(/\r?\n/)
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                  sound.click();
+                  const res = await siteConfig.updateBotStock(
+                    {
+                      enabled: siteConfig.botStock?.enabled !== false,
+                      gems: Number.isFinite(parsedGems) ? parsedGems : 0,
+                      pets: petsList,
+                    },
+                    `Updated Bot Stock (${formatGems(Number.isFinite(parsedGems) ? parsedGems : 0)}, ${petsList.length} pets)`
+                  );
+                  if (res.ok) {
+                    sound.win();
+                    pushToast('Bot stock updated!', 'success');
+                  }
+                }}
+                className="card"
+                style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Gem size={16} className="text-gem" />
+                    <span>Bot Stock Inventory (Gems &amp; Pets)</span>
+                  </div>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${siteConfig.botStock?.enabled !== false ? 'btn-green' : 'btn-outline'}`}
+                    onClick={() =>
+                      siteConfig.updateBotStock(
+                        { enabled: !(siteConfig.botStock?.enabled !== false) },
+                        `Toggled Bot Stock Checking -> ${!(siteConfig.botStock?.enabled !== false) ? 'ON' : 'OFF'}`
+                      )
+                    }
+                  >
+                    Stock Check: {siteConfig.botStock?.enabled !== false ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+                <div className="admin-two-col">
+                  <label className="field-label">
+                    <span>Available Bot Gems (auto-synced from HUD when bot runs)</span>
+                    <input
+                      className="input"
+                      value={botStockGems}
+                      onChange={(e) => setBotStockGems(e.target.value)}
+                      placeholder="e.g. 867M"
+                    />
+                  </label>
+                  <label className="field-label">
+                    <span>Available Bot Pets (1 pet name per line)</span>
+                    <textarea
+                      className="input"
+                      rows={3}
+                      style={{ height: 'auto', padding: 10, fontSize: 12.5 }}
+                      value={botStockPetsText}
+                      onChange={(e) => setBotStockPetsText(e.target.value)}
+                      placeholder={'Huge Bat Hoodie Bunny\nHuge Happy Computer'}
+                    />
+                  </label>
+                </div>
+                <div>
+                  <button type="submit" className="btn btn-sm btn-primary">
+                    Save Bot Stock
+                  </button>
+                </div>
+              </form>
 
               <div className="card live-bets-card">
                 <div className="live-bets-header">

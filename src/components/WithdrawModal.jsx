@@ -19,6 +19,7 @@ export function WithdrawModal({ open, onClose }) {
   const currentUserKey = useAuth((s) => s.currentUserKey);
   const openAuthModal = useAuth((s) => s.openAuthModal);
   const botSettings = useSiteConfig((s) => s.botSettings);
+  const botStock = useSiteConfig((s) => s.botStock);
   const myTrades = useTrades((s) => s.myTrades);
   const requestTrade = useTrades((s) => s.requestTrade);
   const cancelTrade = useTrades((s) => s.cancelTrade);
@@ -66,6 +67,32 @@ export function WithdrawModal({ open, onClose }) {
       .filter((p) => !q || (p.name || '').toLowerCase().includes(q))
       .slice(0, 40);
   }, [inventory, petFilter]);
+
+  const stockWarning = useMemo(() => {
+    if (!botStock?.enabled) return '';
+    const rawAmt = amountText.trim() === '' || amountText.trim() === '0' ? 0 : parseGems(amountText);
+    const amt = Number.isFinite(rawAmt) && rawAmt > 0 ? rawAmt : 0;
+    const missing = [];
+    if (amt > (botStock.gems || 0)) {
+      missing.push(`${formatGems(amt)} gems (bot has ${formatGems(botStock.gems || 0)})`);
+    }
+    if (selectedUids.length > 0) {
+      const counts = new Map();
+      for (const name of botStock.pets || []) {
+        const k = String(name).toLowerCase();
+        counts.set(k, (counts.get(k) || 0) + 1);
+      }
+      for (const uid of selectedUids) {
+        const pet = (inventory || []).find((p) => p.uid === uid);
+        if (!pet) continue;
+        const k = String(pet.name).toLowerCase();
+        const have = counts.get(k) || 0;
+        if (have <= 0) missing.push(pet.name);
+        else counts.set(k, have - 1);
+      }
+    }
+    return missing.join(', ');
+  }, [botStock, amountText, selectedUids, inventory]);
 
   const togglePetUid = (uid) => {
     sound.click();
@@ -187,6 +214,23 @@ export function WithdrawModal({ open, onClose }) {
               {activeWithdraw.pets.map((p) => p.name).join(', ')}
             </div>
           )}
+          {activeWithdraw.stockMissing && (
+            <div
+              style={{
+                background: 'rgba(255, 197, 49, 0.12)',
+                border: '1px solid rgba(255, 197, 49, 0.35)',
+                color: 'var(--gold)',
+                borderRadius: 10,
+                padding: '8px 12px',
+                fontSize: 12.5,
+                textAlign: 'center',
+                fontWeight: 600,
+              }}
+            >
+              Bot doesn&apos;t have {activeWithdraw.missingText} right now — admin has been notified
+              and we will get it for you shortly!
+            </div>
+          )}
           {botSettings?.privateServerUrl && (
             <a
               href={botSettings.privateServerUrl}
@@ -218,10 +262,35 @@ export function WithdrawModal({ open, onClose }) {
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="modal-form">
-          <div className="text-muted" style={{ fontSize: 13 }}>
-            Available: <strong className="text-gem">{formatGems(balance)}</strong> gems ·{' '}
-            <strong>{inventory.length}</strong> pets
+          <div className="text-muted" style={{ fontSize: 13, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+            <span>
+              Available: <strong className="text-gem">{formatGems(balance)}</strong> gems ·{' '}
+              <strong>{inventory.length}</strong> pets
+            </span>
+            {botStock?.enabled && (
+              <span>
+                Bot Stock: <strong className="text-gold">{formatGems(botStock.gems || 0)}</strong> ·{' '}
+                <strong>{(botStock.pets || []).length}</strong> pets
+              </span>
+            )}
           </div>
+
+          {stockWarning && (
+            <div
+              style={{
+                background: 'rgba(255, 197, 49, 0.12)',
+                border: '1px solid rgba(255, 197, 49, 0.35)',
+                color: 'var(--gold)',
+                borderRadius: 10,
+                padding: '8px 12px',
+                fontSize: 12.5,
+                fontWeight: 600,
+              }}
+            >
+              Bot doesn&apos;t currently have: {stockWarning}. Submitting will notify an admin and we
+              will get it shortly!
+            </div>
+          )}
 
           <label className="field-label">
             <span>Your Exact Roblox Username</span>

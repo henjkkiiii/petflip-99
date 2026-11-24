@@ -174,6 +174,12 @@ const DEFAULT_SITE_CONFIG = {
     robloxUsername: '',
     privateServerUrl: '',
   },
+  botStock: {
+    enabled: true,
+    gems: 867_000_000,
+    pets: [],
+    updatedAt: 0,
+  },
   auditLog: [],
 };
 
@@ -296,6 +302,18 @@ function sanitizeBotSettings(b) {
   };
 }
 
+function sanitizeBotStock(s) {
+  const src = s && typeof s === 'object' ? s : {};
+  return {
+    enabled: src.enabled === undefined ? true : Boolean(src.enabled),
+    gems: Math.max(0, Math.round(Number(src.gems ?? 0) || 0)),
+    pets: Array.isArray(src.pets)
+      ? src.pets.slice(0, 500).map((p) => String(p || '').trim()).filter(Boolean)
+      : [],
+    updatedAt: Number(src.updatedAt) || 0,
+  };
+}
+
 function sanitizeSiteConfig(cfg, isAdmin) {
   const merged = {
     ...DEFAULT_SITE_CONFIG,
@@ -313,6 +331,7 @@ function sanitizeSiteConfig(cfg, isAdmin) {
     games: sanitizeGamesConfig(cfg?.games),
     ui: sanitizeUiConfig(cfg?.ui),
     botSettings: sanitizeBotSettings(cfg?.botSettings),
+    botStock: sanitizeBotStock(cfg?.botStock),
   };
   merged.auditLog = isAdmin && Array.isArray(cfg?.auditLog) ? cfg.auditLog.slice(0, 150) : [];
   return merged;
@@ -338,6 +357,7 @@ function loadOrCreateDb() {
   if (!Array.isArray(db.battles)) db.battles = [];
   if (!Array.isArray(db.coinflips)) db.coinflips = [];
   if (!Array.isArray(db.tradeQueue)) db.tradeQueue = [];
+  if (!Array.isArray(db.adminNotifications)) db.adminNotifications = [];
   if (!db.processedBotTx || typeof db.processedBotTx !== 'object') db.processedBotTx = {};
   if (!db.restoredUsers || typeof db.restoredUsers !== 'object') db.restoredUsers = {};
   if (!db.preservedProfiles || typeof db.preservedProfiles !== 'object') db.preservedProfiles = {};
@@ -958,6 +978,48 @@ function pruneTradeQueue() {
   return db.tradeQueue;
 }
 
+function checkBotStockAvailability(gemsNeeded, petsNeeded) {
+  const stock = sanitizeBotStock(db.siteConfig?.botStock);
+  if (!stock.enabled) return { available: true, missingText: '' };
+  const missing = [];
+  if (gemsNeeded > 0 && stock.gems < gemsNeeded) {
+    missing.push(`${formatGemsServer(gemsNeeded)} gems (bot has ${formatGemsServer(stock.gems)})`);
+  }
+  if (Array.isArray(petsNeeded) && petsNeeded.length > 0) {
+    const counts = new Map();
+    for (const name of stock.pets) {
+      const k = name.toLowerCase();
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+    for (const p of petsNeeded) {
+      const k = String(p?.name || '').toLowerCase();
+      const have = counts.get(k) || 0;
+      if (have <= 0) {
+        missing.push(p.name);
+      } else {
+        counts.set(k, have - 1);
+      }
+    }
+  }
+  return {
+    available: missing.length === 0,
+    missingText: missing.join(', '),
+  };
+}
+
+function addAdminNotification(title, message, meta = {}) {
+  const note = {
+    id: `ntf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    time: Date.now(),
+    title: String(title || 'Alert').slice(0, 80),
+    message: String(message || '').slice(0, 240),
+    read: false,
+    ...meta,
+  };
+  db.adminNotifications = [note, ...(db.adminNotifications || [])].slice(0, 50);
+  return note;
+}
+
 function completeDepositJob(job, gems, txId, actorName = 'TradeBot', petsOverride = null) {
   if (!job || job.status === 'completed') return false;
   if (txId && db.processedBotTx[txId]) return false;
@@ -1064,6 +1126,19 @@ async function handleApi(req, res, pathname) {
       body = await readJsonBody(req);
     } catch {
       return sendJson(res, 400, { ok: false, error: 'Invalid JSON body.' });
+    }
+    if (pathname === '/api/bot/stock') {
+      const cur = sanitizeBotStock(db.siteConfig?.botStock);
+      if (body.gems !== undefined) {
+        cur.gems = Math.max(0, Math.round(Number(body.gems) || 0));
+      }
+      if (Array.isArray(body.pets)) {
+        cur.pets = body.pets.slice(0, 500).map((p) => String(p || '').trim()).filter(Boolean);
+      }
+      cur.updatedAt = Date.now();
+      db.siteConfig.botStock = cur;
+      saveDb();
+      return sendJson(res, 200, { ok: true, botStock: cur });
     }
     const job = (db.tradeQueue || []).find((j) => j.id === body.jobId);
     if (!job) return sendJson(res, 404, { ok: false, error: 'Trade job not found.' });
@@ -1175,6 +1250,7 @@ async function handleApi(req, res, pathname) {
         ? (db.tradeQueue || []).filter((j) => j.userKey === session.userKey).slice(0, 15)
         : [],
       tradeQueue: isAdmin ? db.tradeQueue || [] : null,
+      adminNotifications: isAdmin ? db.adminNotifications || [] : null,
       botApiKey: isAdmin ? BOT_API_KEY : null,
       accounts: isAdmin ? sanitizeAccountsMap(db.accounts) : null,
       promoCodes: isAdmin ? listPromoCodes() : null,
@@ -1865,6 +1941,11 @@ async function handleApi(req, res, pathname) {
           tier: String(p.tier || 'huge'),
         }));
     }
+    const stockCheck =
+      type === 'withdraw'
+        ? checkBotStockAvailability(amount, cleanPets)
+        : { available: true, missingText: '' };
+
     const now = Date.now();
     const job = {
       id: `tr-${now}-${crypto.randomBytes(3).toString('hex')}`,
@@ -1874,6 +1955,11 @@ async function handleApi(req, res, pathname) {
       robloxUsername,
       amount: Math.max(0, amount),
       pets: cleanPets,
+      stockMissing: !stockCheck.available,
+      missingText: stockCheck.missingText,
+      statusMessage: !stockCheck.available
+        ? 'Bot is currently out of this gem/pet stock — admins were notified and we will get it shortly!'
+        : '',
       actualGems: 0,
       actualPetsCount: 0,
       status: 'waiting',
@@ -1881,6 +1967,13 @@ async function handleApi(req, res, pathname) {
       createdAt: now,
       expiresAt: now + 10 * 60 * 1000,
     };
+    if (type === 'withdraw' && !stockCheck.available) {
+      addAdminNotification(
+        'Restock Needed (Withdraw)',
+        `${me.username} (${robloxUsername}) requested ${stockCheck.missingText} — bot doesn't have it yet!`,
+        { jobId: job.id, type: 'restock' }
+      );
+    }
     db.tradeQueue.unshift(job);
     db.tradeQueue = db.tradeQueue.slice(0, 100);
     saveDb();
@@ -2479,6 +2572,13 @@ async function handleApi(req, res, pathname) {
         ...patch.botSettings,
       });
     }
+    if (patch.botStock && typeof patch.botStock === 'object') {
+      db.siteConfig.botStock = sanitizeBotStock({
+        ...(db.siteConfig.botStock || {}),
+        ...patch.botStock,
+        updatedAt: Date.now(),
+      });
+    }
     if (body.auditAction) {
       logAudit(me.username, String(body.auditAction).slice(0, 200));
     }
@@ -2551,6 +2651,20 @@ async function handleApi(req, res, pathname) {
       drops: [],
       siteConfig: sanitizeSiteConfig(db.siteConfig, true),
     });
+  }
+
+  if (pathname === '/api/admin/notifications/clear') {
+    db.adminNotifications = [];
+    saveDb();
+    return sendJson(res, 200, { ok: true, adminNotifications: [] });
+  }
+
+  if (pathname === '/api/admin/notifications/read') {
+    for (const n of db.adminNotifications || []) {
+      if (!body.id || n.id === body.id) n.read = true;
+    }
+    saveDb();
+    return sendJson(res, 200, { ok: true, adminNotifications: db.adminNotifications });
   }
 
   if (pathname === '/api/admin/trades/approve-deposit') {

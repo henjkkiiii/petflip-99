@@ -102,6 +102,12 @@ export const DEFAULT_SITE_CONFIG = {
     robloxUsername: '',
     privateServerUrl: '',
   },
+  botStock: {
+    enabled: true,
+    gems: 867_000_000,
+    pets: [],
+    updatedAt: 0,
+  },
   auditLog: [],
 };
 
@@ -172,6 +178,10 @@ export const useSiteConfig = create((set, get) => {
         ...DEFAULT_SITE_CONFIG.botSettings,
         ...(cfg.botSettings || {}),
       };
+      const nextBotStock = {
+        ...DEFAULT_SITE_CONFIG.botStock,
+        ...(cfg.botStock || {}),
+      };
       set({
         startingBalance: cfg.startingBalance ?? DEFAULT_SITE_CONFIG.startingBalance,
         allowDeposits: cfg.allowDeposits ?? DEFAULT_SITE_CONFIG.allowDeposits,
@@ -188,6 +198,7 @@ export const useSiteConfig = create((set, get) => {
         games: nextGames,
         ui: nextUi,
         botSettings: nextBotSettings,
+        botStock: nextBotStock,
         auditLog: Array.isArray(cfg.auditLog) ? cfg.auditLog : [],
       });
       applyThemeAndBrandingToDom(nextTheme, nextBranding);
@@ -324,6 +335,10 @@ export const useSiteConfig = create((set, get) => {
 
     updateBotSettings(botPatch, auditLabel = 'Updated Trade Bot settings') {
       return pushConfigPatch({ botSettings: botPatch }, auditLabel);
+    },
+
+    updateBotStock(stockPatch, auditLabel = 'Updated Trade Bot stock') {
+      return pushConfigPatch({ botStock: stockPatch }, auditLabel);
     },
 
     resetAllConfig() {
