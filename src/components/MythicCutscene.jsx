@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Crown, Sparkles, Zap } from 'lucide-react';
 import { formatGems } from '../lib/format.js';
 import { fireConfetti } from '../lib/confetti.js';
@@ -9,7 +10,8 @@ import { GemAmount } from './GemAmount.jsx';
 export function MythicCutscene({ pet, onDone }) {
   const [stage, setStage] = useState('charge'); // 'charge' | 'burst' | 'reveal'
 
-  const isGarg = pet?.tier === 'gargantuan';
+  const isGarg =
+    pet?.tier === 'gargantuan' || /^gargantuan\b/i.test(String(pet?.name || ''));
 
   useEffect(() => {
     if (!pet) return undefined;
@@ -32,9 +34,9 @@ export function MythicCutscene({ pet, onDone }) {
     };
   }, [pet, isGarg]);
 
-  if (!pet) return null;
+  if (!pet || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div
       className={`mythic-cutscene ${isGarg ? 'mythic-gargantuan' : 'mythic-titanic'} stage-${stage}`}
       role="dialog"
@@ -99,6 +101,7 @@ export function MythicCutscene({ pet, onDone }) {
           )}
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }

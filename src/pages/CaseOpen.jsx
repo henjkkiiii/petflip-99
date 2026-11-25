@@ -148,8 +148,12 @@ export function CaseOpen() {
       payout: totalValue,
     });
 
+    const isMythic = (p) =>
+      p?.tier === 'gargantuan' ||
+      p?.tier === 'titanic' ||
+      /^(gargantuan|titanic)\b/i.test(String(p?.name || ''));
     const mythicWinner = [...stamped]
-      .filter((p) => p.tier === 'gargantuan' || p.tier === 'titanic')
+      .filter(isMythic)
       .sort((a, b) => (TIER_RANK[b.tier] || 0) - (TIER_RANK[a.tier] || 0) || (b.value || 0) - (a.value || 0))[0];
 
     if (mythicWinner) {

@@ -9,6 +9,7 @@ import { formatGems } from '../lib/format.js';
 import { sound } from '../lib/sound.js';
 import { fireConfetti } from '../lib/confetti.js';
 import { CaseReel } from '../components/CaseReel.jsx';
+import { MythicCutscene } from '../components/MythicCutscene.jsx';
 import { PetImage } from '../components/PetImage.jsx';
 import { PetCard } from '../components/PetCard.jsx';
 import { GemAmount } from '../components/GemAmount.jsx';
@@ -33,6 +34,7 @@ export function BattleRoom() {
   const [activeRoundWinners, setActiveRoundWinners] = useState(null);
   const [playbackDone, setPlaybackDone] = useState(false);
   const [busyAction, setBusyAction] = useState('');
+  const [cutscenePet, setCutscenePet] = useState(null);
 
   const initForIdRef = useRef(null);
   const doneSeatsRef = useRef(0);
@@ -113,8 +115,20 @@ export function BattleRoom() {
           if (finalRoom.winnerSeat === mySeat) {
             const allPulled = finalRoom.players.flatMap((p) => p?.pulls || []);
             const totalVal = allPulled.reduce((s, it) => s + (Number(it.value) || 0), 0);
-            sound.bigWin();
-            fireConfetti(true);
+            const mythicPet = [...allPulled]
+              .filter(
+                (p) =>
+                  p?.tier === 'gargantuan' ||
+                  p?.tier === 'titanic' ||
+                  /^(gargantuan|titanic)\b/i.test(String(p?.name || ''))
+              )
+              .sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0))[0];
+            if (mythicPet) {
+              setCutscenePet(mythicPet);
+            } else {
+              sound.bigWin();
+              fireConfetti(true);
+            }
             pushToast(
               `VICTORY! Won ${allPulled.length} pets worth ${formatGems(totalVal)}!`,
               'success'
@@ -522,6 +536,8 @@ export function BattleRoom() {
           );
         })}
       </div>
+
+      <MythicCutscene pet={cutscenePet} onDone={() => setCutscenePet(null)} />
     </div>
   );
 }
