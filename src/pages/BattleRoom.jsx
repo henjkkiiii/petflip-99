@@ -537,7 +537,11 @@ export function BattleRoom() {
         })}
       </div>
 
-      <MythicCutscene pet={cutscenePet} onDone={() => setCutscenePet(null)} />
+      <MythicCutscene
+        pet={cutscenePet}
+        crateIcon={room?.crates?.[0]?.icon}
+        onDone={() => setCutscenePet(null)}
+      />
     </div>
   );
 }

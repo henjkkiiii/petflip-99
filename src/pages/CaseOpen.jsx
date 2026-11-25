@@ -482,6 +482,7 @@ export function CaseOpen() {
 
       <MythicCutscene
         pet={cutscenePet}
+        crateIcon={crate?.icon}
         onDone={() => {
           setCutscenePet(null);
           setResultModalOpen(true);
