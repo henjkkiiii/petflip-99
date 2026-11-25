@@ -153,4 +153,14 @@ export const sound = {
   coin() {
     play('coins', { volume: 0.6 });
   },
+  mythicCutscene(isGargantuan = false) {
+    play('boom-low', { volume: 0.9, rate: isGargantuan ? 0.85 : 0.95 });
+    play('gem', { volume: 0.45, rate: 0.9, delay: 0.25 });
+    play('gem', { volume: 0.5, rate: 1.15, delay: 0.55 });
+    play('gem', { volume: 0.6, rate: 1.45, delay: 0.85 });
+    play('explode', { volume: 0.85, rate: isGargantuan ? 0.8 : 0.95, delay: 1.1 });
+    play('reveal', { volume: 0.85, rate: isGargantuan ? 0.9 : 1.0, delay: 1.15 });
+    play('bigwin', { volume: 0.85, delay: 1.25 });
+    play('coins', { volume: 0.7, delay: 1.5 });
+  },
 };

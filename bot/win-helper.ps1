@@ -135,7 +135,7 @@ if ($Action -eq "check-green") {
   exit 0
 }
 
-if ($Action -eq "ocr-rect") {
+if ($Action -eq "ocr-rect" -or $Action -eq "ocr-white-rect") {
   $left = [Math]::Min($X1, $X2)
   $top = [Math]::Min($Y1, $Y2)
   $width = [Math]::Max(10, [Math]::Abs($X2 - $X1))
@@ -145,6 +145,19 @@ if ($Action -eq "ocr-rect") {
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.CopyFromScreen($left, $top, 0, 0, $bmp.Size)
   $g.Dispose()
+
+  if ($Action -eq "ocr-white-rect") {
+    for ($py = 0; $py -lt $height; $py++) {
+      for ($px = 0; $px -lt $width; $px++) {
+        $c = $bmp.GetPixel($px, $py)
+        if ($c.R -gt 205 -and $c.G -gt 205 -and $c.B -gt 205) {
+          $bmp.SetPixel($px, $py, [System.Drawing.Color]::Black)
+        } else {
+          $bmp.SetPixel($px, $py, [System.Drawing.Color]::White)
+        }
+      }
+    }
+  }
 
   $pad = 24
   $scale = 3

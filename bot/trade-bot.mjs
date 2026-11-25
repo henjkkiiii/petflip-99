@@ -42,6 +42,22 @@ function ocrRect(rect) {
   ]);
 }
 
+function ocrWhiteRect(rect) {
+  if (!rect) return '';
+  return ps([
+    '-Action',
+    'ocr-white-rect',
+    '-X1',
+    String(rect.x1),
+    '-Y1',
+    String(rect.y1),
+    '-X2',
+    String(rect.x2),
+    '-Y2',
+    String(rect.y2),
+  ]);
+}
+
 function checkGreenCount(rect) {
   if (!rect) return 0;
   const out = ps([
@@ -221,7 +237,7 @@ let lastSyncedHudGems = -1;
 async function syncHudGemsIfNeeded() {
   if (!coords.myHudGemsBox || Date.now() - lastStockSync < 15_000) return;
   lastStockSync = Date.now();
-  const hudText = ocrRect(coords.myHudGemsBox);
+  const hudText = ocrWhiteRect(coords.myHudGemsBox);
   const gems = parseOcrGems(hudText);
   if (gems > 0 && gems !== lastSyncedHudGems) {
     lastSyncedHudGems = gems;
@@ -229,6 +245,8 @@ async function syncHudGemsIfNeeded() {
     if (res?.ok) {
       console.log(`[STOCK] Synced HUD gems ("${hudText}") -> ${gems.toLocaleString()}`);
     }
+  } else if (lastSyncedHudGems === -1) {
+    console.log(`[STOCK] HUD OCR check: "${hudText}" -> ${gems}`);
   }
 }
 

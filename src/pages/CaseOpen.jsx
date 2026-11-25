@@ -11,6 +11,7 @@ import { useSiteConfig, getEffectiveCratePrice } from '../store/siteConfig.js';
 import { useToast } from '../store/toast.js';
 import { useDrops } from '../store/drops.js';
 import { CaseReel } from '../components/CaseReel.jsx';
+import { MythicCutscene } from '../components/MythicCutscene.jsx';
 import { PetCard } from '../components/PetCard.jsx';
 import { PetImage } from '../components/PetImage.jsx';
 import { GemAmount } from '../components/GemAmount.jsx';
@@ -47,6 +48,7 @@ export function CaseOpen() {
   const [recentPulls, setRecentPulls] = useState([]);
   const [sessionOpened, setSessionOpened] = useState(0);
   const [sessionBest, setSessionBest] = useState(null);
+  const [cutscenePet, setCutscenePet] = useState(null);
 
   const doneCountRef = useRef(0);
   const activeRunRef = useRef(null);
@@ -145,6 +147,16 @@ export function CaseOpen() {
       multiplier: mult,
       payout: totalValue,
     });
+
+    const mythicWinner = [...stamped]
+      .filter((p) => p.tier === 'gargantuan' || p.tier === 'titanic')
+      .sort((a, b) => (TIER_RANK[b.tier] || 0) - (TIER_RANK[a.tier] || 0) || (b.value || 0) - (a.value || 0))[0];
+
+    if (mythicWinner) {
+      if (modalTimerRef.current) clearTimeout(modalTimerRef.current);
+      setCutscenePet(mythicWinner);
+      return;
+    }
 
     const hasRare = stamped.some((p) =>
       ['huge', 'titanic', 'gargantuan'].includes(p.tier)
@@ -463,6 +475,14 @@ export function CaseOpen() {
           </div>
         </div>
       </Modal>
+
+      <MythicCutscene
+        pet={cutscenePet}
+        onDone={() => {
+          setCutscenePet(null);
+          setResultModalOpen(true);
+        }}
+      />
     </div>
   );
 }

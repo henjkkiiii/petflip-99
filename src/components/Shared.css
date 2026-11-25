@@ -2081,3 +2081,360 @@
     width: 50px;
   }
 }
+
+
+/* Epic Titanic & Gargantuan Crate Cutscene (60fps GPU transform/opacity) */
+.mythic-cutscene {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, #151833 0%, #05060c 75%);
+  animation: mythicFadeIn 0.25s ease-out both;
+}
+
+.mythic-gargantuan {
+  background: radial-gradient(circle at 50% 50%, #2a0d2e 0%, #09040b 75%);
+}
+
+@keyframes mythicFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.mythic-bg-rays {
+  position: absolute;
+  width: 160vmax;
+  height: 160vmax;
+  left: 50%;
+  top: 50%;
+  margin-left: -80vmax;
+  margin-top: -80vmax;
+  pointer-events: none;
+  opacity: 0.22;
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(56, 217, 255, 0.22) 0deg 8deg,
+    transparent 8deg 24deg
+  );
+  animation: mythicRaysSpin 18s linear infinite;
+}
+
+.mythic-gargantuan .mythic-bg-rays {
+  opacity: 0.3;
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(255, 197, 49, 0.28) 0deg 8deg,
+    rgba(236, 72, 153, 0.2) 8deg 14deg,
+    transparent 14deg 24deg
+  );
+}
+
+@keyframes mythicRaysSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.mythic-flash-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: #ffffff;
+  opacity: 0;
+}
+
+.mythic-cutscene.stage-burst .mythic-flash-overlay {
+  animation: mythicFlash 0.65s ease-out forwards;
+}
+
+@keyframes mythicFlash {
+  0% {
+    opacity: 0.92;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.mythic-skip-btn {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 5;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.mythic-skip-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.mythic-charge-wrap {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  text-align: center;
+}
+
+.mythic-warning-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: #38d9ff;
+  background: rgba(56, 217, 255, 0.14);
+  border: 1px solid rgba(56, 217, 255, 0.45);
+  animation: mythicPulseFast 0.45s ease-in-out infinite alternate;
+}
+
+.mythic-gargantuan .mythic-warning-pill {
+  color: #ffc531;
+  background: rgba(255, 197, 49, 0.16);
+  border-color: rgba(255, 197, 49, 0.55);
+}
+
+@keyframes mythicPulseFast {
+  from {
+    transform: scale(0.98);
+    opacity: 0.85;
+  }
+  to {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+
+.mythic-orb-wrap {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  display: grid;
+  place-items: center;
+  animation: mythicShake 0.16s linear infinite;
+}
+
+@keyframes mythicShake {
+  0% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-3px, 2px) scale(1.03); }
+  50% { transform: translate(3px, -2px) scale(1.06); }
+  75% { transform: translate(-2px, -3px) scale(1.03); }
+  100% { transform: translate(2px, 2px) scale(1); }
+}
+
+.mythic-orb-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 4px solid transparent;
+  border-top-color: #38d9ff;
+  border-right-color: #8b5cf6;
+  animation: mythicRaysSpin 0.6s linear infinite;
+}
+
+.mythic-gargantuan .mythic-orb-ring {
+  border-top-color: #ffc531;
+  border-right-color: #ec4899;
+}
+
+.mythic-orb-core {
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: radial-gradient(circle, rgba(56, 217, 255, 0.85), rgba(79, 107, 255, 0.35));
+  box-shadow: 0 0 42px rgba(56, 217, 255, 0.65);
+}
+
+.mythic-gargantuan .mythic-orb-core {
+  background: radial-gradient(circle, rgba(255, 197, 49, 0.9), rgba(236, 72, 153, 0.45));
+  box-shadow: 0 0 54px rgba(255, 197, 49, 0.75);
+}
+
+.mythic-charge-sub {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.mythic-reveal-wrap {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  max-width: 520px;
+  width: 100%;
+}
+
+.mythic-shockwave {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  width: 120px;
+  height: 120px;
+  margin-left: -60px;
+  margin-top: -60px;
+  border-radius: 50%;
+  border: 4px solid rgba(56, 217, 255, 0.85);
+  pointer-events: none;
+  animation: mythicShockwave 0.85s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.mythic-gargantuan .mythic-shockwave {
+  border-color: rgba(255, 197, 49, 0.95);
+}
+
+@keyframes mythicShockwave {
+  0% {
+    transform: scale(0.4);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(5.2);
+    opacity: 0;
+  }
+}
+
+.mythic-tier-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 14px;
+  letter-spacing: 0.14em;
+  color: #09121e;
+  background: linear-gradient(90deg, #38d9ff, #a855f7);
+  box-shadow: 0 0 28px rgba(56, 217, 255, 0.5);
+  animation: mythicSlamIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mythic-gargantuan .mythic-tier-banner {
+  color: #1c0b04;
+  background: linear-gradient(90deg, #ffc531, #ec4899, #ffc531);
+  box-shadow: 0 0 36px rgba(255, 197, 49, 0.65);
+}
+
+.mythic-pet-pedestal {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  display: grid;
+  place-items: center;
+  margin: 6px 0;
+}
+
+.mythic-pet-halo {
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(56, 217, 255, 0.45) 0%, rgba(139, 92, 246, 0.16) 55%, transparent 72%);
+}
+
+.mythic-gargantuan .mythic-pet-halo {
+  background: radial-gradient(circle, rgba(255, 197, 49, 0.55) 0%, rgba(236, 72, 153, 0.24) 55%, transparent 72%);
+}
+
+.mythic-pet-img-wrap {
+  position: relative;
+  z-index: 2;
+  animation: mythicPetPop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes mythicPetPop {
+  0% {
+    transform: scale(0.15) translateY(30px);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes mythicSlamIn {
+  0% {
+    transform: scale(1.6) translateY(-14px);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.mythic-pet-name {
+  font-family: var(--font-display);
+  font-size: clamp(26px, 5vw, 40px);
+  font-weight: 900;
+  line-height: 1.1;
+  margin: 0;
+  background: linear-gradient(90deg, #ffffff, #38d9ff, #c084fc);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: mythicSlamIn 0.5s 0.12s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mythic-gargantuan .mythic-pet-name {
+  background: linear-gradient(90deg, #fff7d6, #ffc531, #ec4899);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.mythic-pet-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-radius: 14px;
+  font-size: 22px;
+  font-weight: 900;
+  background: rgba(18, 21, 31, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  animation: mythicSlamIn 0.5s 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mythic-rap-tag {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(56, 217, 255, 0.16);
+  color: #38d9ff;
+}
+
+.mythic-claim-btn {
+  margin-top: 6px;
+  min-width: 240px;
+  animation: mythicSlamIn 0.4s 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
