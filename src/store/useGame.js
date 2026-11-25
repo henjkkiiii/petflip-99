@@ -50,7 +50,7 @@ export function getLevelProgress(xp) {
   };
 }
 
-export function createDefaultAccountData(startingBalance = 500_000) {
+export function createDefaultAccountData(startingBalance = 0) {
   return {
     balance: Math.max(0, Math.round(Number(startingBalance) || 0)),
     inventory: [],
@@ -190,7 +190,7 @@ export const useGame = create((set, get) => ({
     }
     const { balance } = get();
     if (amount > balance) {
-      toast.push('Insufficient gems! Claim rewards or deposit demo gems.', 'error');
+      toast.push('Insufficient gems! Deposit via In-Game Trade or claim rewards.', 'error');
       return false;
     }
     set((state) => ({

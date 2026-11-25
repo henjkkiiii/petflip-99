@@ -59,12 +59,12 @@ export const THEME_PRESETS = {
 };
 
 export const DEFAULT_SITE_CONFIG = {
-  startingBalance: 500_000,
-  allowDeposits: true,
+  startingBalance: 0,
+  allowDeposits: false,
   allowRegistration: true,
   maintenanceMode: false,
   chatEnabled: true,
-  botsEnabled: true,
+  botsEnabled: false,
   banner: {
     text: '',
     tone: 'info',
@@ -79,7 +79,7 @@ export const DEFAULT_SITE_CONFIG = {
     heroSubtitle:
       'Open custom PS99 crates, battle live in PvP Case Battles, and play 11 gem arcade games.',
     footerText:
-      'Fan-made demo. Play-money gems only – no real value, no real deposits. Not affiliated with BIG Games or Roblox.',
+      'PETFLIP 99 — Virtual PS99 Gem Arcade. Not affiliated with BIG Games or Roblox.',
     currencyName: 'Gems',
   },
   theme: {

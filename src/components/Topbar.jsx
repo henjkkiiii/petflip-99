@@ -87,7 +87,7 @@ export function Topbar({
         {account ? (
           <>
             <div className="wallet-wrap">
-              <div className="wallet" title="Your play-money PS99 gem balance">
+              <div className="wallet" title="Your gem balance">
                 <GemIcon size={18} />
                 <GemAmount
                   value={balance}

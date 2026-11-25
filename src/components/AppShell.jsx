@@ -93,7 +93,7 @@ export function AppShell({ children }) {
 
         <footer className="app-footer">
           {branding?.footerText ||
-            'Fan-made demo. Play-money gems only – no real value, no real deposits. Not affiliated with BIG Games or Roblox.'}{' '}
+            'PETFLIP 99 — Virtual PS99 Gem Arcade. Not affiliated with BIG Games or Roblox.'}{' '}
           {ui?.showFairnessLink !== false && (
             <button
               type="button"

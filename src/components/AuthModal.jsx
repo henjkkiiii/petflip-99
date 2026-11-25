@@ -197,7 +197,9 @@ export function AuthModal() {
             ? 'Please wait…'
             : tab === 'login'
               ? 'Sign In'
-              : `Create Account (${formatGems(startingBalance)} Gems)`}
+              : startingBalance > 0
+                ? `Create Account (${formatGems(startingBalance)} Gems)`
+                : 'Create Account'}
         </button>
       </form>
     </Modal>

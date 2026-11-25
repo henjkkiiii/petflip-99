@@ -511,7 +511,7 @@ export function Rewards() {
               <Sparkles size={14} /> Daily Streak Reward
             </div>
             <div style={{ fontSize: 22, fontWeight: 800 }} className="text-gem">
-              +{formatGems(dailyClaimedModal.amount)} Play Gems
+              +{formatGems(dailyClaimedModal.amount)} Gems
             </div>
             {dailyClaimedModal.pet && (
               <div style={{ width: '100%', maxWidth: 210 }}>
